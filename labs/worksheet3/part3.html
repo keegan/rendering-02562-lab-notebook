@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>KPL Worksheet 3</title>
+  <script src="part3.js"></script>
+</head>
+<body>
+  <div>
+    <h4>Glass Object Shader</h4>
+    <input type="radio" name="glossy" value="2" />
+    <label for="gloss1">Reflective</label>
+
+    <input type="radio"  name="glossy" value="4" />
+    <label for="gloss1">Phong</label>
+
+    <input type="radio" checked="true"  name="glossy" value="5" />
+    <label for="gloss1">Glossy</label>
+
+    <input type="radio"  name="glossy" value="3" />
+    <label for="gloss1">Refractive</label>
+
+    <input type="radio"  name="glossy" value="1" />
+    <label for="gloss2">Matte</label>
+
+    <input type="radio"  name="glossy" value="0" />
+    <label for="gloss3">Plain Color</label>
+  </div>
+  <hr>
+  <div>
+    <h4>Matte Object Shader</h4>
+    <input type="radio" checked="true" id="matte1" name="matte" value="1" />
+    <label for="matte1">Matte</label>
+
+    <input type="radio" id="matte2" name="matte" value="0" />
+    <label for="matte1">Plain Color</label>
+  </div>
+  <div>
+    <select id="texturetoggle" size="2">
+      <option value="0">texture off</option>
+      <option value="1" selected>texture on</option>
+    </select>
+    <select id="addrmode" size="2">
+      <option value="0">nearest neighbor</option>
+      <option value="1" selected>bilinear</option>
+    </select>
+  </div>
+  <hr>
+  <div>
+    <h4>Anti-Aliasing Subdivision Levels</h4>
+    <input id="subdivisions" value="3" type="number">
+  </div>
+  <canvas width="500" height="800"></canvas>
+    
+</body>
+</html>

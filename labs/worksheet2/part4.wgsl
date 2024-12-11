@@ -258,10 +258,12 @@ fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
 
 fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   let light = sample_point_light((*hit).position);
-  var Lr = ((*hit).color_amb / 3.14159);
+  
 
-  let wo = normalize(e - (*hit).position);
-  let wr = reflect(light.wi, (*hit).normal);
+  let wo = normalize((*r).origin - (*hit).position);
+  let wr = reflect(-light.wi, (*hit).normal);
+
+  var Lr = ((*hit).color_amb / 3.14159);
   if(!check_shadow((*hit).position, light.wi, light.dist)){
     Lr += 
     light.Li * 
@@ -271,11 +273,14 @@ fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
       (
         (*hit).color_specular * 
         ((*hit).shine + 2) * 0.15915494309 * // 1/2pi = 0.15915494309
-        pow(dot(wo, wr), (*hit).shine)
+        pow(max(dot(wo, wr), 0.0), (*hit).shine)
       )
     );
   }
 
+  if(dot(Lr, Lr) < 0.5){
+    return vec3f(0);
+  }
   return Lr;
 }
 
