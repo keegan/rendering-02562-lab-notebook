@@ -4,10 +4,16 @@
 <head>
   <meta charset="utf-8">
   <title>KPL Worksheet 6</title>
-  <script type="text/javascript" src="OBJParser.js"></script>
-  <script src="part5.js"></script>
+  <script type="text/javascript" src="scripts/OBJParser.js"></script>
+  <script type="text/javascript" src="scripts/BspTree.js"></script>
+  <script src="part1.js"></script>
 </head>
 <body>
+  <p>
+    The BspTree.js script sorts a trimesh into a BSP tree and loads that tree into storage buffers for access from the WGSL shader.  
+    The build_bsp_tree(drawingInfo, device, buffers) function takes the drawingInfo (collection of data describing the trimesh and its faces' materials)
+
+  </p>
   <canvas width="512" height="512"></canvas>
     
 </body>

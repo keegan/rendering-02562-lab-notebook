@@ -58,7 +58,7 @@ async function main() {
   
   
   const wgsl = device.createShaderModule({
-    code: await (await fetch("./part5.wgsl")).text()
+    code: await (await fetch("./part1.wgsl")).text()
   });
   
   const pipeline = device.createRenderPipeline({
@@ -106,7 +106,7 @@ async function main() {
   var cam_const = 1.0;
   var gloss_shader = 5;
   var matte_shader = 1;
-  var numDivisions = 1;
+  const numDivisions = 3;
   var uniforms_f = new Float32Array([aspect, cam_const]);
   var uniforms_int = new Int32Array([gloss_shader, matte_shader, use_texture, numDivisions, use_linear]);
   
@@ -121,40 +121,29 @@ async function main() {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, 
   }); 
 
-  let jitter = new Float32Array(2500); // 10,000 bytes = 2500 floats = maximum of 50x50
+  let jitter = new Float32Array(numDivisions * numDivisions * 2);
   const jitterBuffer = device.createBuffer({
     size: jitter.byteLength, 
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, 
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, 
   });
 
-  const obj_filename = "data/CornellBoxWithBlocks.obj";
+  const obj_filename = "data/bunny.obj";
   const drawingInfo = await readOBJFile(obj_filename, 1, true); // filename, scale, ccw vertices
   
 
-  const positionsBuffer = device.createBuffer({
-    size: drawingInfo.vertices.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  });
+  const bspTreeBuffers = build_bsp_tree(drawingInfo, device, {})
+  // bspTreeBuffers has the following:
+  // - positions 
+  // - normals
+  // - colors
+  // - indices
+  // - treeIds
+  // - bspTree
+  // - bspPlanes
+  // - aabb (stored in uniform buffer)
 
-  const indicesBuffer = device.createBuffer({
-    size: drawingInfo.indices.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  })
-
-  const normalsBuffer = device.createBuffer({
-    size: drawingInfo.normals.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
-
-  const materialIndicesBuffer = device.createBuffer({
-    size: drawingInfo.mat_indices.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
-
-  const lightIndicesBuffer = device.createBuffer({
-    size: drawingInfo.light_indices.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  });
+  // the build_bsp_tree function creates these buffer on the device
+  // all we have to do is put them in the right spots in the bindGroup layout
 
   // flatten into diffuse, then emitted
   const mats = drawingInfo.materials.map((m) => [m.color, m.emission]).flat().map((color) => [color.r, color.g, color.b, color.a]).flat();
@@ -162,23 +151,23 @@ async function main() {
   const materialsArray = new Float32Array(mats);
   console.log(materialsArray);
   console.log(drawingInfo);
-  const materialsBuffer = device.createBuffer({
-    size: materialsArray.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
 
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0), 
     entries: [
+      // uniforms 
       { binding: 0, resource: { buffer: uniformBuffer_f } },
       { binding: 1, resource: { buffer: uniformBuffer_int } },
-      { binding: 2, resource: {buffer: materialsBuffer }},
-      { binding: 3, resource: { buffer: positionsBuffer }},
-      { binding: 4, resource: { buffer: indicesBuffer } },
-      { binding: 5, resource: { buffer: jitterBuffer } },
-      { binding: 6, resource: { buffer: normalsBuffer } },
-      { binding: 7, resource: { buffer: materialIndicesBuffer }},
-      { binding: 8, resource: { buffer: lightIndicesBuffer }},
+      { binding: 2, resource: { buffer: jitterBuffer } },
+      { binding: 3, resource: { buffer: bspTreeBuffers.aabb }},
+      // storage buffers (max 8!)
+      { binding: 4, resource: { buffer: bspTreeBuffers.positions }},
+      { binding: 5, resource: { buffer: bspTreeBuffers.normals }},
+      { binding: 6, resource: { buffer: bspTreeBuffers.colors } },
+      { binding: 7, resource: { buffer: bspTreeBuffers.indices } },
+      { binding: 8, resource: { buffer: bspTreeBuffers.treeIds }},
+      { binding: 9, resource: { buffer: bspTreeBuffers.bspTree }},
+      { binding: 10, resource: { buffer: bspTreeBuffers.bspPlanes }},
     ], 
   });
   
@@ -186,15 +175,6 @@ async function main() {
   device.queue.writeBuffer(uniformBuffer_f, 0, uniforms_f);
   device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
 
-  device.queue.writeBuffer(positionsBuffer, 0, drawingInfo.vertices);
-  device.queue.writeBuffer(indicesBuffer, 0, drawingInfo.indices);
-
-  device.queue.writeBuffer(normalsBuffer, 0, drawingInfo.normals);
-
-  device.queue.writeBuffer(materialIndicesBuffer, 0, drawingInfo.mat_indices);
-  device.queue.writeBuffer(materialsBuffer, 0, materialsArray);
-
-  device.queue.writeBuffer(lightIndicesBuffer, 0, drawingInfo.light_indices);
 
   const updateSubpixels = () => {
     uniforms_int[3] = numDivisions;

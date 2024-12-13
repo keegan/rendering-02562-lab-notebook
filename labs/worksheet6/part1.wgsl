@@ -15,21 +15,28 @@ struct UniformsInt { // unsigned int values
   use_linear: u32,
 }
 
-struct Material {
-  diffuse: vec4f,
-  emission: vec4f,
-}
+
+// Axis-Aligned Bounding box (box between the points min and max)
+struct AABB {
+  min: vec3f,
+  max: vec3f,
+};
 
 @group(0) @binding(0) var<uniform> uniforms_f: UniformsF;
 @group(0) @binding(1) var<uniform> uniforms_int: UniformsInt;
-@group(0) @binding(2) var<storage> materials: array<Material>;
-@group(0) @binding(3) var<storage> vert_positions: array<vec4f>;
+@group(0) @binding(2) var<uniform> subpixels: array<vec2f>;
+@group(0) @binding(3) var<uniform> aabb: AABB;
+
+@group(0) @binding(4) var<storage> vert_positions: array<vec4f>;
+@group(0) @binding(5) var<storage> vert_normals: array<vec4f>;
+@group(0) @binding(6) var<storage> colors: array<vec4f>;
 @group(0) @binding(4) var<storage> vert_indices: array<vec4u>;
 @group(0) @binding(5) var<storage> subpixels: array<vec2f>;
-@group(0) @binding(6) var<storage> vert_normals: array<vec4f>;
-@group(0) @binding(7) var<storage> material_indices: array<u32>;
 @group(0) @binding(8) var<storage> light_indices: array<u32>;
 
+@group(0) @binding(10) var<storage> treeIds: array<u32>;
+@group(0) @binding(11) var<storage> bspTree: array<vec4u>;
+@group(0) @binding(12) var<storage> bspPlanes: array<f32>;
 
 @vertex
 fn main_vs(@builtin(vertex_index) VertexIndex: u32) -> VSOut {
@@ -112,11 +119,102 @@ fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
     vec3f(0.0, 1.0, 0.0)
   );
   let numTriangles = arrayLength(&vert_indices);
-  for(var idx = u32(0); idx < numTriangles; idx ++){
-    if(int_triangle(*ray, hit, idx)){ (*ray).tmax = (*hit).distance; }  
+  // check outer binding box
+  if(int_aabb(ray)){
+    if(int_trimesh(ray, hit)){
+      (*ray).tmax = (*hit).distance;
+    }
   }
 
   return (*hit).hit;
+}
+
+fn int_aabb(ray: ptr<function, Ray>) -> bool {
+  let p1 = (aabb.min - r.origin) / r.direction;
+  let p1 = (aabb.max - r.origin) / r.direction;
+
+  let pmin = min(p1, p2);
+  let pmax = max(p1, p2);
+  let tmin = max(pmin.x, max(pmin.y, pmin.z));
+  let tmax = min(pmax.x, min(pmax.y, pmax.z));
+  if(tmin > tmax || tmin > r.tmax || tmax < r.tmin){
+    // ray doesnt intersect AABB
+    return false;
+  }
+  // ray does intersect, constrain search to AABB
+  r.tmin = max(tmin - 1.0e-3f, r.tmin);
+  r.tmax = min(tmax - 1.0e-3f, r.tmax);
+  return true;
+}
+
+const MAX_LEVEL = 20u;
+const DSP_LEAF = 3u;
+var  <private> branch_node: array<vec2u, MAX_LEVEL>; 
+var  <private> branch_ray: array<vec2f, MAX_LEVEL>;
+
+fn int_trimesh(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool{
+  var branch_level = 0u;
+  var near_node = 0u;
+  var far_node = 0;
+  var t = 0.0f;
+  var node = 0u;
+  for(var i = 0u; i < MAX_LEVEL; i ++){
+    let tree_node = bspTree[node];
+    let node_axis_leaf = tree_node.x & 3u;
+    if(node_axis_leaf == BSP_LEAF){
+      // leaf found
+      let node_count = tree_node.x >> 2u;
+      let node_id = tree_node.y;
+      var found = false;
+      for(var j = 0u; j < node_count; j++){
+        let obj_idx = treeIds[node_id + j];
+        if(int_triangle(*ray, hit, obj_idx)){
+          (*ray).tmax = (*hit).dist;
+          found = true;
+        }
+      }
+      if(found){ return true;}
+      else if(0u == branch_level){
+        // traversed whole tree, no intersection
+        return false;
+      }
+      else {
+        branch_level --;
+        i = branch_node[branch_level].x;
+        node = branch_node[branch_level].y;
+        (*ray).tmin = branch_ray[branch_level].x;
+        (*ray).tmax = branch_ray[branch_level].y;
+        continue;
+      }
+    }
+    let axis_direction = (*ray).direction[node_axis_leaf];
+    let axis_origin = (*ray).origin[node_axis_leaf];
+    if(axis_direction >= 0.0f){
+      near_node = tree_node.z; // left node
+      far_node = tree_node.w; // right
+    } else {
+      near_node = tree_node.w; // right
+      far_node = tree_node.z; // left
+    }
+    let node_plane = bspPlanes[node];
+    let denom = select(axis_direction, 1.0e-8f, abs(axis_direction) < 1.0e-8f);
+    t = (node_plane - axis_origin) / denom;
+    if(t > (*ray).tmax){
+      node = near_node;
+    } else if(t < (*ray).tmin) {
+      node = far_node;
+    } else {
+      branch_node[branch_level].x = i;
+      branch_node[branch_level].y = far_node;
+      branch_ray[branch_level].x = t;
+      branch_ray[branch_level].y = (*ray).tmax;
+      branch_level ++;
+      (*ray).tmax = t;
+      node = near_node;
+    }
+
+  }
+  return false;
 }
 
 fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
@@ -152,9 +250,8 @@ fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
       if(beta >= 0){
         let gamma = -dot(partial, e0) / omega_dot_n;
         if(gamma >= 0 && (beta + gamma) <= 1){
-          let material = materials[material_indices[i]];
-          (*hit).color_amb = material.emission.rgb;
-          (*hit).color_diff = material.diffuse.rgb;
+          (*hit).color_diff = colors[vert_indices[i].w];
+          (*hit).color_amb = color_diff * 0.1;
           (*hit).hit = true;
           (*hit).distance = t;
           // r(t) = o + t w
@@ -179,7 +276,6 @@ struct Light {
 }
 
 fn sample_point_light(p: vec3f) -> Light {
-  let ls1 = light_indices[0];
   // return light info at the point p
   // light source is at (0, 1, 0) w/ intensity (pi, pi, pi)
   let x = vec3f(280, 548, 280); // inside the ceiling area light for now
@@ -202,44 +298,44 @@ fn sample_directional_light(p: vec3f) -> Light {
 }
 
 // sample triangle area light with index idx to point p 
-fn sample_trimesh_light(p: vec3f, idx: u32) -> Light {
-  let index = light_indices[idx];
-  let verts = vert_indices[index].xyz;
-  // coords of the 3 corner vertices of light
-  let v = array<vec3f, 3>(
-    vert_positions[verts[0]].xyz,
-    vert_positions[verts[1]].xyz,
-    vert_positions[verts[2]].xyz
-  );
-  // vertex normals
-  let norms = array<vec3f, 3>(
-    vert_normals[verts[0]].xyz,
-    vert_normals[verts[1]].xyz,
-    vert_normals[verts[2]].xyz,
-  );
-  // in barycentric coordinates, center of triangle
-  // is where alpha = beta = gamma = 0.333
+// fn sample_trimesh_light(p: vec3f, idx: u32) -> Light {
+//   let index = light_indices[idx];
+//   let verts = vert_indices[index].xyz;
+//   // coords of the 3 corner vertices of light
+//   let v = array<vec3f, 3>(
+//     vert_positions[verts[0]].xyz,
+//     vert_positions[verts[1]].xyz,
+//     vert_positions[verts[2]].xyz
+//   );
+//   // vertex normals
+//   let norms = array<vec3f, 3>(
+//     vert_normals[verts[0]].xyz,
+//     vert_normals[verts[1]].xyz,
+//     vert_normals[verts[2]].xyz,
+//   );
+//   // in barycentric coordinates, center of triangle
+//   // is where alpha = beta = gamma = 0.333
 
-  let e0 = v[1] - v[0];
-  let e1 = v[2] - v[0];
+//   let e0 = v[1] - v[0];
+//   let e1 = v[2] - v[0];
 
-  let center = (e0 + e1) * 0.333 + v[0];
-  let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
+//   let center = (e0 + e1) * 0.333 + v[0];
+//   let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
 
-  // direction from point to light
-  let wi = normalize(center - p);
-  var Le = materials[material_indices[index]].emission.rgb;
+//   // direction from point to light
+//   let wi = normalize(center - p);
+//   var Le = materials[material_indices[index]].emission.rgb;
 
 
-  let areaCross = cross(e0, e1);
-  // magnitude of vector = sqrt(dot(vector, vector))
-  let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
-  let dist = distance(p, center); // convert from mm to meters
+//   let areaCross = cross(e0, e1);
+//   // magnitude of vector = sqrt(dot(vector, vector))
+//   let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
+//   let dist = distance(p, center); // convert from mm to meters
 
-  let Li = dot(-wi, norm) * Le * area  * pow(1/dist, 2);
+//   let Li = dot(-wi, norm) * Le * area  * pow(1/dist, 2);
 
-  return Light(Li, wi, dist);
-}
+//   return Light(Li, wi, dist);
+// }
 
 fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
   var lightray =  Ray(pos, lightdir, 10e-4, lightdist-10e-4);
@@ -249,20 +345,9 @@ fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
 
 fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   var Lr = ((*hit).color_amb / 3.14159);
-  // we need to sample all area light source triangles
-  // an area light emits a cosine weighted radiance distribution from each differential
-  // element of area dA
-  // Lr = int(fr * V * Le * cos(theta_i) * \frac{cos theta_e}{r^2} dAe
-  // we can approximate this with just sampling each triangle making up the light
-  // Lr = fr*V/(r^2) * (w_i dot n) * sum(-w_i dot n_e)L_e*A_e
-  // so lets sample each triangle
-  let numTriangles = arrayLength(&light_indices);
-  for(var idx = u32(0); idx < numTriangles; idx ++){
-    let light = sample_trimesh_light((*hit).position, idx);
-    // see if path to the light intersects an object (ie we are in shadow)
-    if(!check_shadow((*hit).position, light.wi, light.dist)){
-      Lr += ((*hit).color_diff / (3.14159)) * light.Li * dot((*hit).normal, light.wi);
-    }
+  let light = sample_point_light((*hit).position);
+  if(!check_shadow((*hit).position, light.wi, light.dist)){
+    Lr += ((*hit).color_diff / (3.14159)) * light.Li * dot((*hit).normal, light.wi);
   }
   // use ambient light and reflected light
   return Lr;
