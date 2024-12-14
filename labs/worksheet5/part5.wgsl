@@ -249,25 +249,20 @@ fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
 
 fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   var Lr = ((*hit).color_amb / 3.14159);
-  // we need to sample all area light source triangles
-  // an area light emits a cosine weighted radiance distribution from each differential
-  // element of area dA
-  // Lr = int(fr * V * Le * cos(theta_i) * \frac{cos theta_e}{r^2} dAe
-  // we can approximate this with just sampling each triangle making up the light
-  // Lr = fr*V/(r^2) * (w_i dot n) * sum(-w_i dot n_e)L_e*A_e
-  // so lets sample each triangle
+  var Lr_if_visible = vec3f(0);
+  var light = Light(vec3f(0), vec3f(0), 0f);
   let numTriangles = arrayLength(&light_indices);
   for(var idx = u32(0); idx < numTriangles; idx ++){
-    let light = sample_trimesh_light((*hit).position, idx);
-    // see if path to the light intersects an object (ie we are in shadow)
-    if(!check_shadow((*hit).position, light.wi, light.dist)){
-      Lr += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);
-    }
+    light = sample_trimesh_light((*hit).position, idx);
+    Lr_if_visible += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);
+  }
+  // distant area light, so just use one sample point for visibility chekc
+  if(!check_shadow((*hit).position, light.wi, light.dist)){
+    Lr += Lr_if_visible;
   }
   // use ambient light and reflected light
   return Lr;
 }
-
 fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   let light = sample_directional_light((*hit).position);
   
