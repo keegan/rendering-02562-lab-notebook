@@ -1,24 +1,6 @@
 
 window.onload = function() {main();}
 
-async function load_texture(device, filename){
-  const resp = await fetch(filename);
-  const blob = await resp.blob();
-  const img = await createImageBitmap(blob, {colorSpaceConversion: 'none'});
-
-  const tex = device.createTexture({
-    size: [img.width, img.height, 1],
-    format: "rgba8unorm",
-    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT
-  });
-  device.queue.copyExternalImageToTexture(
-    {source: img, flipY: true},
-    { texture: tex },
-    {width: img.width, height: img.height},
-  );
-  return tex;
-}
-
 function compute_jitters(buffer, divisions, pixelsize){
   // we divide each pixel into `divisions`^2 sub-pixels
   const subpixels = divisions * divisions;
@@ -34,12 +16,18 @@ function compute_jitters(buffer, divisions, pixelsize){
     const x_offset = step * (Math.random() - 0.5);
     const y_offset = step * (Math.random() - 0.5);
     // recenter subpixels around (0, 0)
-    buffer[i * 2] = (x + x_offset - 0.5) * pixelsize;
-    buffer[i * 2 + 1] = (y + y_offset - 0.5) * pixelsize;
+    // stored in a vec4f for byte-aligning with WGSL
+    buffer[i * 4] = (x + x_offset - 0.5) * pixelsize;
+    buffer[i * 4 + 1] = (y + y_offset - 0.5) * pixelsize;
+    buffer[i * 4 + 2] = 0;
+    buffer[i * 4 + 3] = 0;
   }
 }
 
 async function main() {
+  const statBox = document.getElementById("stattext");
+  statBox.innerText = "JS loaded";
+  console.log("Begin main function");
   if (!navigator.gpu) {
     throw new Error("WebGPU not supported on this browser.");
   }
@@ -99,7 +87,9 @@ async function main() {
 
 
 
-  var use_linear = 1;
+  var obj_idx = 0;
+  var filename = "data/bunny.obj";
+
 
   var use_texture = 1;
   const aspect = canvas.width / canvas.height;
@@ -108,7 +98,7 @@ async function main() {
   var matte_shader = 1;
   const numDivisions = 3;
   var uniforms_f = new Float32Array([aspect, cam_const]);
-  var uniforms_int = new Int32Array([gloss_shader, matte_shader, use_texture, numDivisions, use_linear]);
+  var uniforms_int = new Int32Array([gloss_shader, matte_shader, use_texture, numDivisions, obj_idx]);
   
   
 
@@ -121,17 +111,14 @@ async function main() {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, 
   }); 
 
-  let jitter = new Float32Array(numDivisions * numDivisions * 2);
+  let jitter = new Float32Array(numDivisions * numDivisions * 2 * 2); // *2 to fit in vec4f for alignment
   const jitterBuffer = device.createBuffer({
     size: jitter.byteLength, 
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, 
   });
 
-  const obj_filename = "data/bunny.obj";
-  const drawingInfo = await readOBJFile(obj_filename, 1, true); // filename, scale, ccw vertices
-  
 
-  const bspTreeBuffers = build_bsp_tree(drawingInfo, device, {})
+  
   // bspTreeBuffers has the following:
   // - positions 
   // - normals
@@ -145,14 +132,35 @@ async function main() {
   // the build_bsp_tree function creates these buffer on the device
   // all we have to do is put them in the right spots in the bindGroup layout
 
-  // flatten into diffuse, then emitted
-  const mats = drawingInfo.materials.map((m) => [m.color, m.emission]).flat().map((color) => [color.r, color.g, color.b, color.a]).flat();
-  console.log(mats);
-  const materialsArray = new Float32Array(mats);
-  console.log(materialsArray);
-  console.log(drawingInfo);
 
-  const bindGroup = device.createBindGroup({
+  
+  
+  device.queue.writeBuffer(uniformBuffer_f, 0, uniforms_f);
+  device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
+
+
+  const updateSubpixels = () => {
+    uniforms_int[3] = numDivisions;
+    compute_jitters(jitter, numDivisions, 1/canvas.height);
+    device.queue.writeBuffer(jitterBuffer, 0, jitter);
+    device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
+  };
+  updateSubpixels();
+
+
+  async function animate(){
+
+    console.log("Load OBJ File " + filename);
+
+    statBox.innerHTML = "<p style='background-color:red;color:white'>Loading OBJ File " + filename + "</p>";
+    const drawingInfo = await readOBJFile(filename, 1, true); // filename, scale, ccw vertices
+    console.log("Start building tree");
+    const bspTreeBuffers = build_bsp_tree(drawingInfo, device, {})
+    console.log("done building tree");
+
+    statBox.innerHTML = "Done loading " + filename;
+
+    const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0), 
     entries: [
       // uniforms 
@@ -169,45 +177,32 @@ async function main() {
       { binding: 9, resource: { buffer: bspTreeBuffers.bspTree }},
       { binding: 10, resource: { buffer: bspTreeBuffers.bspPlanes }},
     ], 
-  });
-  
-  
-  device.queue.writeBuffer(uniformBuffer_f, 0, uniforms_f);
-  device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
-
-
-  const updateSubpixels = () => {
-    uniforms_int[3] = numDivisions;
-    compute_jitters(jitter, numDivisions, 1/canvas.height);
-    device.queue.writeBuffer(jitterBuffer, 0, jitter);
-    device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
-  };
-  updateSubpixels();
-
-  addEventListener("wheel", (event) => {
-    cam_const *= 1.0 + 2.5e-4 * event.deltaY;
-    uniforms_f[1] = cam_const;
-    device.queue.writeBuffer(uniformBuffer_f, 0, uniforms_f);
-    requestAnimationFrame(animate);
-  });
-  
-  addEventListener("keydown", (event) => {
-    if (event.code == 'ArrowUp') {
-      cam_const *= 1.2;
-    }
-    else if (event.code == 'ArrowDown') {
-        cam_const *= 0.8;
-    }
-    uniforms_f[1] = cam_const;
-    device.queue.writeBuffer(uniformBuffer_f, 0, uniforms_f);
-    requestAnimationFrame(animate);
-  });
-
-
-  function animate(){
-    render(device, ctx, pipeline, bindGroup)
+    });
+    render(device, ctx, pipeline, bindGroup);
   }
-  animate();
+
+  
+
+  if (document.querySelector('input[name="obj"]')) {
+    document.querySelectorAll('input[name="obj"]').forEach((elem) => {
+      elem.addEventListener("change", function(event) {
+        obj_idx = event.target.value;
+        console.log("OBJ IDX: " + obj_idx);
+        if(obj_idx == 0){
+          filename = "data/bunny.obj";
+        } else if (1 == obj_idx ){
+          filename = "data/teapot.obj";
+        } else {
+          filename = "data/dragon.obj";
+        }
+        uniforms_int[4] = obj_idx;
+        device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
+        requestAnimationFrame(animate);
+      });
+    });
+  }
+
+  requestAnimationFrame(animate);
 
 }
 

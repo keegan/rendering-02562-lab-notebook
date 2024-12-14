@@ -12,9 +12,8 @@ struct UniformsInt { // unsigned int values
   matte_shader: u32,
   texture_enabled: u32,
   subdivisions: u32, // sqrt of number of subpixels
-  use_linear: u32,
+  obj_idx: u32,
 }
-
 
 // Axis-Aligned Bounding box (box between the points min and max)
 struct AABB {
@@ -24,19 +23,18 @@ struct AABB {
 
 @group(0) @binding(0) var<uniform> uniforms_f: UniformsF;
 @group(0) @binding(1) var<uniform> uniforms_int: UniformsInt;
-@group(0) @binding(2) var<uniform> subpixels: array<vec2f>;
+// 3x3 jitter, 2 flaots (x, y) per point
+// rounded up to a multiple of 16 bytes
+@group(0) @binding(2) var<uniform> subpixels: array<vec4f, 9>; 
 @group(0) @binding(3) var<uniform> aabb: AABB;
 
 @group(0) @binding(4) var<storage> vert_positions: array<vec4f>;
 @group(0) @binding(5) var<storage> vert_normals: array<vec4f>;
 @group(0) @binding(6) var<storage> colors: array<vec4f>;
-@group(0) @binding(4) var<storage> vert_indices: array<vec4u>;
-@group(0) @binding(5) var<storage> subpixels: array<vec2f>;
-@group(0) @binding(8) var<storage> light_indices: array<u32>;
-
-@group(0) @binding(10) var<storage> treeIds: array<u32>;
-@group(0) @binding(11) var<storage> bspTree: array<vec4u>;
-@group(0) @binding(12) var<storage> bspPlanes: array<f32>;
+@group(0) @binding(7) var<storage> vert_indices: array<vec4u>;
+@group(0) @binding(8) var<storage> treeIds: array<u32>;
+@group(0) @binding(9) var<storage> bspTree: array<vec4u>;
+@group(0) @binding(10) var<storage> bspPlanes: array<f32>;
 
 @vertex
 fn main_vs(@builtin(vertex_index) VertexIndex: u32) -> VSOut {
@@ -76,15 +74,35 @@ const shader_matte: u32 = 1;
 
 
 const tex_scale = 0.02;
-// eye point at (0.15, 1.5, 10)
-// look-at point (0.15, 1.5, 0)
-// up-vector (0, 1, 0)
-// camera constant d = 2.5
-const e = vec3f(277.0, 275.0, -570.0);
-const d = 1.0;
-const u = vec3f(0, 1, 0);
-const p = vec3f(277.0, 275.0, 0.0);
-
+// these are all arrays so we can choose the settings
+// for the loaded OBJ file
+// eye point
+// these are in the order bunny, teapot, dragon
+const e = array<vec3f, 3>(
+  vec3f(-0.02, 0.11, 0.6),
+  vec3f(0, 5, 8),
+  vec3f(-0.2, 0.3, -0.4),
+);
+// camera constant
+const d = array<f32, 3>(2.5, 1.0, 2.0);
+// up vector
+const u = array<vec3f, 3>(
+  vec3f(0, 1, 0),
+  vec3f(0, 1, 0),
+  vec3f(0, 1, 0),
+);
+// look at point
+const p = array<vec3f, 3>(
+  vec3f(-0.02, 0.11, 0.0),
+  vec3f(0.3, 1, 0.0),
+  vec3f(0.0, 0.1, 0.0),
+);
+// directional light direction
+const dir_light_dir = array<vec3f, 3>(
+  vec3f(-0.3, -0.1, -0.8),
+  vec3f(-0.3, -0.5, -0.8),
+  vec3f(-0.3, -0.1, 0.8),
+);
 
 struct Onb { // orthonormal basis for plane
   tangent: vec3f,
@@ -94,18 +112,18 @@ struct Onb { // orthonormal basis for plane
 
 
 fn get_camera_ray(ipcoords: vec2f) -> Ray {
-  let v = normalize(p - e);
+  let v = normalize(p[uniforms_int.obj_idx] - e[uniforms_int.obj_idx]);
 
-  let b1 = normalize(cross(v, u));
+  let b1 = normalize(cross(v, u[uniforms_int.obj_idx]));
   let b2 = cross(b1, v); // b1 and v are magnitude 1 so their cross is already 1
   
   let x = ipcoords[0];
   let y = ipcoords[1];
 
-  let q = (v)*d + (b1 * x) + (b2 * y);
+  let q = (v)*d[uniforms_int.obj_idx] + (b1 * x) + (b2 * y);
 
   var dir = normalize(q);
-  return Ray(e, dir, 0.1, 10000);
+  return Ray(e[uniforms_int.obj_idx], dir, 0.1, 10000);
 }
 
 fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
@@ -118,7 +136,6 @@ fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
     vec3f(0.0, 0.0, 1.0),
     vec3f(0.0, 1.0, 0.0)
   );
-  let numTriangles = arrayLength(&vert_indices);
   // check outer binding box
   if(int_aabb(ray)){
     if(int_trimesh(ray, hit)){
@@ -129,9 +146,9 @@ fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
   return (*hit).hit;
 }
 
-fn int_aabb(ray: ptr<function, Ray>) -> bool {
+fn int_aabb(r: ptr<function, Ray>) -> bool {
   let p1 = (aabb.min - r.origin) / r.direction;
-  let p1 = (aabb.max - r.origin) / r.direction;
+  let p2 = (aabb.max - r.origin) / r.direction;
 
   let pmin = min(p1, p2);
   let pmax = max(p1, p2);
@@ -148,18 +165,19 @@ fn int_aabb(ray: ptr<function, Ray>) -> bool {
 }
 
 const MAX_LEVEL = 20u;
-const DSP_LEAF = 3u;
+const BSP_LEAF = 3u;
 var  <private> branch_node: array<vec2u, MAX_LEVEL>; 
 var  <private> branch_ray: array<vec2f, MAX_LEVEL>;
 
 fn int_trimesh(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool{
   var branch_level = 0u;
   var near_node = 0u;
-  var far_node = 0;
+  var far_node = 0u;
   var t = 0.0f;
   var node = 0u;
-  for(var i = 0u; i < MAX_LEVEL; i ++){
+  for(var i = 0u; i <= MAX_LEVEL; i ++){
     let tree_node = bspTree[node];
+    // if tree_node.x has the 2 least significant bits set
     let node_axis_leaf = tree_node.x & 3u;
     if(node_axis_leaf == BSP_LEAF){
       // leaf found
@@ -169,7 +187,7 @@ fn int_trimesh(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool{
       for(var j = 0u; j < node_count; j++){
         let obj_idx = treeIds[node_id + j];
         if(int_triangle(*ray, hit, obj_idx)){
-          (*ray).tmax = (*hit).dist;
+          (*ray).tmax = (*hit).distance;
           found = true;
         }
       }
@@ -250,8 +268,8 @@ fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
       if(beta >= 0){
         let gamma = -dot(partial, e0) / omega_dot_n;
         if(gamma >= 0 && (beta + gamma) <= 1){
-          (*hit).color_diff = colors[vert_indices[i].w];
-          (*hit).color_amb = color_diff * 0.1;
+          (*hit).color_diff = colors[vert_indices[i].w].rgb;
+          (*hit).color_amb = (*hit).color_diff * 0.1;
           (*hit).hit = true;
           (*hit).distance = t;
           // r(t) = o + t w
@@ -260,7 +278,7 @@ fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
           // weighted of the vertex normals
           let alpha = 1.0 - (beta + gamma);
           (*hit).normal = normalize(alpha * norms[0] + beta * norms[1] + gamma*norms[2]);
-          (*hit).shader = uniforms_int.matte_shader;
+          (*hit).shader = shader_matte;
         }
       }
     }
@@ -278,7 +296,7 @@ struct Light {
 fn sample_point_light(p: vec3f) -> Light {
   // return light info at the point p
   // light source is at (0, 1, 0) w/ intensity (pi, pi, pi)
-  let x = vec3f(280, 548, 280); // inside the ceiling area light for now
+  let x = vec3f(0, 2, 0);
   let I = vec3f(3.14159) / 10;
   let dist = distance(p, x); 
   let wi = normalize(x - p);
@@ -292,9 +310,9 @@ fn sample_directional_light(p: vec3f) -> Light {
   // with direction: normalize(vec3f(-1.0))
   // and emitted radiance Le = (pi, pi, pi)
   let Le = vec3f(3.14159);
-  let we = normalize(vec3f(0.5, -1.0, 0.3));
   let dist = 0.1; // very far away
-  return Light(Le, -we, dist);
+  let light_direction = normalize(-dir_light_dir[uniforms_int.obj_idx]);
+  return Light(Le, light_direction, dist);
 }
 
 // sample triangle area light with index idx to point p 
@@ -345,7 +363,7 @@ fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
 
 fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   var Lr = ((*hit).color_amb / 3.14159);
-  let light = sample_point_light((*hit).position);
+  let light = sample_directional_light((*hit).position);
   if(!check_shadow((*hit).position, light.wi, light.dist)){
     Lr += ((*hit).color_diff / (3.14159)) * light.Li * dot((*hit).normal, light.wi);
   }
@@ -439,7 +457,7 @@ fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f{
 // the fragment defines the shader function run at each pixel
 @fragment
 fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f{
-  const bgcolor = vec4f(0.1, 0.3, 0.6, 1.0);
+  const bgcolor = vec4f(0.1, 0.3, 0.6, 0.9);
   const max_depth = 10;
   var result = vec3f(0.0);
   // iterate over each sub-pixel position

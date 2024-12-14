@@ -39,6 +39,8 @@ function BspTree(objects)
 
 function subdivide_node(node, bbox, level, objects)
 {
+  // console.log("SUBDNODE");
+  // console.log("length "+ objects.length + ", level " + level);
   const TESTS = 4;
 
   if(objects.length <= max_objects || level == max_level)
@@ -59,10 +61,16 @@ function subdivide_node(node, bbox, level, objects)
     node.right = new Object();
 
     var min_cost = 1.0e27;
+    // i iterates over the different 
     for(var i = 0; i < 3; ++i)
     {
       for(var k = 1; k < TESTS; ++k)
       {
+        // try several (TEST) different dividing planes.
+        // for each, we split the faces into left and right of that 
+        // center plane, then calculate the cost of this division 
+        // cost is box area * count in box
+        // minimize this cost
         let left_bbox = new Aabb(bbox);
         let right_bbox = new Aabb(bbox);
         const max_corner = bbox.max[i];
@@ -162,7 +170,10 @@ function build_bsp_tree(drawingInfo, device, buffers)
     let acc_obj = new AccObj(i, v0, v1, v2);
     objects.push(acc_obj);
   }
+  console.log("BSP tree constructor");
   root = new BspTree(objects);
+  console.log("BSP tree constructor done");
+
   treeIds = new Uint32Array(tree_objects.length);
   for(var i = 0; i < tree_objects.length; ++i)
     treeIds[i] = tree_objects[i].prim_idx;
@@ -204,6 +215,7 @@ function build_bsp_tree(drawingInfo, device, buffers)
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
   });
   device.queue.writeBuffer(buffers.colors, 0, drawingInfo.colors);
+  console.log(drawingInfo.colors);
 
   buffers.indices = device.createBuffer({
     size: drawingInfo.indices.byteLength, 
@@ -229,7 +241,9 @@ function build_bsp_tree(drawingInfo, device, buffers)
   });
   device.queue.writeBuffer(buffers.bspPlanes, 0, bspPlanes);
 
-  const bbox = flatten([vec4(root.bbox.min), vec4(root.bbox.max)]);
+  // flatten the AABB's min and max (both vec3fs) 
+  // expand to vec4s for byte-aligning
+  const bbox = new Float32Array([...root.bbox.min, 0.0, ...root.bbox.max, 0.0]);
   buffers.aabb = device.createBuffer({
     size: bbox.byteLength,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -237,251 +251,4 @@ function build_bsp_tree(drawingInfo, device, buffers)
   device.queue.writeBuffer(buffers.aabb, 0, bbox);
 
   return buffers;
-}
-
-
-function intersect_triangle(drawingInfo, r, hit, idx)
-{
-  let face_x = drawingInfo.indices[idx*4]*4;
-  let face_y = drawingInfo.indices[idx*4 + 1]*4;
-  let face_z = drawingInfo.indices[idx*4 + 2]*4;
-  let v0 = vec3(drawingInfo.vertices[face_x], drawingInfo.vertices[face_x + 1], drawingInfo.vertices[face_x + 2]);
-  let v1 = vec3(drawingInfo.vertices[face_y], drawingInfo.vertices[face_y + 1], drawingInfo.vertices[face_y + 2]);
-  let v2 = vec3(drawingInfo.vertices[face_z], drawingInfo.vertices[face_z + 1], drawingInfo.vertices[face_z + 2]);
-  let e0 = subtract(v1, v0);
-  let e1 = subtract(v2, v0);
-  let n = cross(e0, e1);
-  let denom = dot(r.direction, n);
-  if(Math.abs(denom) < 1.0e-8) { return false; }
-  let a = vec3((v0[0] - r.origin[0])/denom, (v0[1] - r.origin[1])/denom, (v0[2] - r.origin[2])/denom);
-  let t = dot(a, n);
-  if(t < r.tmin || t > r.tmax) { return false; }
-  let b = cross(a, r.direction);
-  let beta = dot(b, e1);
-  let gamma = -dot(b, e0);
-  if(beta >= 0.0 && gamma >= 0.0 && beta + gamma <= 1.0) {
-    hit.has_hit = true;
-    hit.dist = t;
-    hit.position = vec3(r.origin[0] + t*r.direction[0], r.origin[1] + t*r.direction[1], r.origin[2] + t*r.direction[2]);
-    hit.normal = normalize(n);
-    return true;
-  }
-  return false;
-}
-
-function intersect_min_max(r)
-{
-  var tmin = -1.0e32;
-  var tmax = 1.0e32;
-  for(var i = 0; i < 3; ++i)
-    if(Math.abs(r.direction[i]) > 1.0e-8)
-    {
-      const p1 = (root.bbox.min[i] - r.origin[i])/r.direction[i];
-      const p2 = (root.bbox.max[i] - r.origin[i])/r.direction[i];
-      const pmin = Math.min(p1, p2);
-      const pmax = Math.max(p1, p2);
-      tmin = Math.max(tmin, pmin);
-      tmax = Math.min(tmax, pmax);
-    }
-  if(tmin > tmax || tmin > r.tmax || tmax < r.tmin)
-    return false;
-  r.tmin = Math.max(tmin - 1.0e-4, r.tmin);
-  r.tmax = Math.min(tmax + 1.0e-4, r.tmax);
-  return true;
-}
-
-function intersect_bsp_array(ray, hit)
-{
-  let branch_node = new Uint32Array(max_level*2);
-  let branch_ray = new Float32Array(max_level*2);
-  let branch_lvl = 0;
-  let near_node = 0;
-  let far_node = 0;
-  let t = 0.0;
-  let node = 0;
-  for(let i = 0; i <= max_level; ++i)
-  {
-    let node_axis_leaf = bspTree[node*4]&3;
-    if(node_axis_leaf === BspNodeType.bsp_leaf)
-    {
-      const node_count = bspTree[node*4]>>2;
-      let found = false;
-      for(let j = 0; j < node_count; ++j)
-      {
-        const node_id = bspTree[node*4 + 1];
-        const obj_idx = treeIds[node_id + j];
-        if(intersect_triangle(ray, hit, obj_idx)) {
-          ray.tmax = hit.dist;
-          found = true;
-        }
-      }
-      if(found) { return true; }
-      else if(branch_lvl === 0) { return false; }
-      else {
-        --branch_lvl;
-        i = branch_node[branch_lvl*2];
-        node = branch_node[branch_lvl*2 + 1];
-        ray.tmin = branch_ray[branch_lvl*2];
-        ray.tmax = branch_ray[branch_lvl*2 + 1];
-        continue;
-      }
-    }
-
-    const axis_direction = ray.direction[node_axis_leaf];
-    const axis_origin = ray.origin[node_axis_leaf];
-    if(axis_direction >= 0.0) {
-      near_node = bspTree[node*4 + 2]; // left
-      far_node = bspTree[node*4 + 3];  // right
-    }
-    else {
-      near_node = bspTree[node*4 + 3]; // right
-      far_node = bspTree[node*4 + 2];  // left
-    }
-    
-    const node_plane = bspPlanes[node];
-    const denom = Math.abs(axis_direction) < d_eps ? d_eps : axis_direction;
-    t = (node_plane - axis_origin)/denom;
-
-    if(t > ray.tmax) { node = near_node; }
-    else if(t < ray.tmin) { node = far_node; }
-    else {
-      branch_node[branch_lvl*2] = i;
-      branch_node[branch_lvl*2 + 1] = far_node;
-      branch_ray[branch_lvl*2] = t;
-      branch_ray[branch_lvl*2 + 1] = ray.tmax;
-      ++branch_lvl;
-      ray.tmax = t;
-      node = near_node;
-    }
-  }
-  return false;
-}
-
-function intersect_trimesh(ray, hit)
-{
-  var subtree = [];
-  var near_node = null;
-  var far_node = null;
-  var t = 0.0;
-  var node = root;
-  for(let i = 0; i <= root.max_level; ++i)
-  {
-    if(node.axis_leaf === BspNodeType.bsp_leaf)
-    {
-      var found = false;
-      for(let j = 0; j < node.count; ++j)
-      {
-        const obj = tree_objects[node.id + j];
-        if(intersect_triangle(ray, hit, obj.prim_idx))
-        {
-          ray.tmax = hit.dist;
-          found = true;
-        }
-      }
-      if(found)
-        return true;
-      else if(subtree.length === 0)
-        return false;
-      else
-      {
-        branch = subtree.pop();
-        i = branch.i;
-        ray.tmin = branch.tmin;
-        ray.tmax = branch.tmax;
-        node = branch.node;
-        continue;
-      }
-    }
-
-    const axis_direction = ray.direction[node.axis_leaf];
-    const axis_origin = ray.origin[node.axis_leaf];
-    if(axis_direction >= 0.0)
-    {
-      near_node = node.left;
-      far_node = node.right;
-    }
-    else
-    {
-      near_node = node.right;
-      far_node = node.left;
-    }
-    
-    const denom = Math.abs(axis_direction) < d_eps ? d_eps : axis_direction;
-    t = (node.plane - axis_origin)/denom;
-
-    if(t > ray.tmax)
-      node = near_node;
-    else if(t < ray.tmin)
-      node = far_node;
-    else 
-    {
-      var branch = new Object();
-      branch.i = i;
-      branch.tmin = t;
-      branch.tmax = ray.tmax;
-      branch.node = far_node;
-      subtree.push(branch);
-      ray.tmax = t;
-      node = near_node;
-    }
-  }
-}
-
-function intersect_node(ray, hit, node)
-{
-  if(node.axis_leaf === BspNodeType.bsp_leaf)
-  {
-    var found = false;
-    for(var i = 0; i < node.count; ++i)
-    {
-      const obj = tree_objects[node.id + i];
-      if(intersect_triangle(ray, hit, obj.prim_idx))
-      {
-        ray.tmax = hit.dist;
-        found = true;
-      }
-    }
-    return found;
-  }
-  else
-  {
-    var near_node = null;
-    var far_node = null;
-    const axis_direction = ray.direction[node.axis_leaf];
-    const axis_origin = ray.origin[node.axis_leaf];
-    if(axis_direction >= 0.0)
-    {
-      near_node = node.left;
-      far_node = node.right;
-    }
-    else
-    {
-      near_node = node.right;
-      far_node = node.left;
-    }
-
-    var t = 0.0;
-    if(Math.abs(axis_direction) < d_eps)
-      t = (node.plane - axis_origin)/d_eps;
-    else
-      t = (node.plane - axis_origin)/axis_direction;
-
-    if(t > ray.tmax)
-      return intersect_node(ray, hit, near_node);
-    else if(t < ray.tmin)
-      return intersect_node(ray, hit, far_node);
-    else 
-    {
-      var t_max = ray.tmax;
-      ray.tmax = t;
-      if(intersect_node(ray, hit, near_node))
-        return true;
-      else
-      {
-        ray.tmin = t;
-        ray.tmax = t_max;
-        return intersect_node(ray, hit, far_node);
-      }
-    }
-  }
 }

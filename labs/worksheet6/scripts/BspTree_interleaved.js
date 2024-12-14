@@ -223,7 +223,7 @@ function build_bsp_tree(drawingInfo, device, buffers)
   });
   device.queue.writeBuffer(buffers.bspPlanes, 0, bspPlanes);
 
-  const bbox = flatten([vec4(root.bbox.min), vec4(root.bbox.max)]);
+  const bbox = new Float32Array([...root.bbox.min, 0.0, ...root.bbox.max, 0.0]);
   buffers.aabb = device.createBuffer({
     size: bbox.byteLength,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,

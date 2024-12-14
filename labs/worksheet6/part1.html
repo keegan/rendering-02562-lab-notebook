@@ -4,16 +4,36 @@
 <head>
   <meta charset="utf-8">
   <title>KPL Worksheet 6</title>
+  <script type="text/javascript" src="scripts/vec3.js"></script>
   <script type="text/javascript" src="scripts/OBJParser.js"></script>
+  <script type="text/javascript" src="scripts/Aabb.js"></script>
   <script type="text/javascript" src="scripts/BspTree.js"></script>
   <script src="part1.js"></script>
 </head>
 <body>
   <p>
     The BspTree.js script sorts a trimesh into a BSP tree and loads that tree into storage buffers for access from the WGSL shader.  
-    The build_bsp_tree(drawingInfo, device, buffers) function takes the drawingInfo (collection of data describing the trimesh and its faces' materials)
+    The build_bsp_tree(drawingInfo, device, buffers) function takes the drawingInfo (collection of data describing the trimesh and its faces' materials).
+    To create the BSP tree, the script starts by drawing a bounding box containing all triangles of the mesh.
+    It then recursively tries splitting each bounding box into two halves, testing along the 3 axes and at 4 different positions (1/5, 2/5, 3/5, 4/5) for each axis
+    to find the dividing plane to bisect the bounding box into two bounding boxes with the lowest
+    score on the surface area heuristic (product of box surface area and # of triangles contained for the left and right boxes). It continues this process,
+    bisecting boxes into smaller ones, until either hitting the max tree depth of 20 or getting the number of triangles inside the box below the max of 4.
+    The resultant axis-aligned BSP tree is then loaded into storage buffers for access from WGSL.
 
   </p>
+  <div>
+    <h4>Object</h4>
+    <input type="radio" checked="true" id="obj0" name="obj" value="0" />
+    <label for="bunny">Bunny</label>
+    <input type="radio"  id="obj1" name="obj" value="1" />
+    <label for="bunny">Teapot</label>
+    <input type="radio"  id="obj2" name="obj" value="2" />
+    <label for="bunny">Dragon</label>
+  </div>
+  <div>
+    <div id="stattext">Loading JS...</div>
+  </div>
   <canvas width="512" height="512"></canvas>
     
 </body>
