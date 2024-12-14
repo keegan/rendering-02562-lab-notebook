@@ -12,15 +12,40 @@ struct UniformsInt { // unsigned int values
   matte_shader: u32,
   texture_enabled: u32,
   subdivisions: u32, // sqrt of number of subpixels
-  use_linear: u32,
+  obj_idx: u32,
+}
+
+// Axis-Aligned Bounding box (box between the points min and max)
+struct AABB {
+  min: vec3f,
+  max: vec3f,
+};
+
+struct VertexAttrib {
+  pos: vec4f,
+  normal: vec4f,
+}
+
+struct Material {
+  diffuse: vec4f,
+  emission: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> uniforms_f: UniformsF;
 @group(0) @binding(1) var<uniform> uniforms_int: UniformsInt;
-@group(0) @binding(2) var grass_texture: texture_2d<f32>;
-@group(0) @binding(3) var<storage> vert_positions: array<vec4f>;
-@group(0) @binding(4) var<storage> vert_indices: array<vec4u>;
-@group(0) @binding(5) var<storage> subpixels: array<vec2f>;
+// 3x3 jitter, 2 floats (x, y) per point
+// rounded up to a multiple of 16 bytes
+@group(0) @binding(2) var<uniform> subpixels: array<vec4f, 25>; 
+@group(0) @binding(3) var<uniform> aabb: AABB;
+
+@group(0) @binding(4) var<storage> vert_attribs: array<VertexAttrib>;
+@group(0) @binding(6) var<storage> materials: array<Material>; // colors
+@group(0) @binding(7) var<storage> vert_indices: array<vec4u>;
+@group(0) @binding(8) var<storage> treeIds: array<u32>;
+@group(0) @binding(9) var<storage> bspTree: array<vec4u>;
+@group(0) @binding(10) var<storage> bspPlanes: array<f32>;
+
+@group(0) @binding(11) var<storage> light_indices: array<u32>;
 
 
 @vertex
@@ -61,11 +86,19 @@ const shader_matte: u32 = 1;
 
 
 const tex_scale = 0.02;
-// eye point at (2, 1.5, 2)
-// look-at point (0, 0.5, 0)
-// up-vector (0, 1, 0)
-// camera constant d = uniforms.cam_const
-const e = vec3f(2, 1.5, 2);
+// these are all arrays so we can choose the settings
+// for the loaded OBJ file
+// eye point
+// these are in the order bunny, teapot, dragon
+const e = vec3f(277, 275.0, -570.0);
+// camera constant
+const d = 1.0f;
+// up vector
+const u = vec3f(0, 1, 0);
+// look at point
+const p = vec3f(277.0, 275.0, 0.0);
+// directional light direction
+const dir_light_dir = vec3f(-0.3, -0.1, -0.8);
 
 struct Onb { // orthonormal basis for plane
   tangent: vec3f,
@@ -75,10 +108,7 @@ struct Onb { // orthonormal basis for plane
 
 
 fn get_camera_ray(ipcoords: vec2f) -> Ray {
-  const p = vec3f(0, 0.5, 0);
   let v = normalize(p - e);
-  const u = vec3f(0, 1, 0);
-  let d = uniforms_f.cam_const;
 
   let b1 = normalize(cross(v, u));
   let b2 = cross(b1, v); // b1 and v are magnitude 1 so their cross is already 1
@@ -89,74 +119,35 @@ fn get_camera_ray(ipcoords: vec2f) -> Ray {
   let q = (v)*d + (b1 * x) + (b2 * y);
 
   var dir = normalize(q);
-  return Ray(e, dir, 0.1, 10000);
+  return Ray(e, dir, 1e-9, 1e9);
 }
-
-
-fn texture_nearest(texture: texture_2d<f32>, texcoords:vec2f) -> vec3f {
-  // get dimensions of texture
-  let res = textureDimensions(texture);
-  // if repeat, we want the texcoords modulo 1.0
-  // otherwise, we just clamp the coords between 0 and 1
-  let st = texcoords - floor(texcoords);
-  let ab = st * vec2f(res);
-  let UV = vec2u(ab + 0.5) % res; // get closest texel coords UV
-  let texcolor = textureLoad(texture, UV, 0);
-  return texcolor.rgb;
-}
-
-fn texture_linear(texture: texture_2d<f32>, texcoords:vec2f) -> vec3f {
-  // perform bilinear average of nearst 4 texels (those surrounding the desired point)
-  // get dimensions of texture
-  let res = textureDimensions(texture);
-  let st = texcoords - floor(texcoords);
-  let ab = st * vec2f(res);
-
-  // find 4 bounding UV coordinates
-  let x1: u32 = u32(ab.x);
-  let x2: u32 = u32(ab.x + 1);
-  let y1: u32 = u32(ab.y);
-  let y2: u32 = u32(ab.y + 1);
-  let x1_f = f32(x1);
-  let x2_f = f32(x2);
-  let y1_f = f32(y1);
-  let y2_f = f32(y2);
-  let UV11 = vec2u(x1, y1); // round a and b down
-  let UV12 = vec2u(x1, y2); // round a down, b up
-  let UV22 = vec2u(x2, y2);
-  let UV21 = vec2u(x2, y1);
-  var texcolor = vec3f(0.0);
-  let denom = f32(((x2 - x1) * (y2 - y1)));
-  texcolor += textureLoad(texture, UV11, 0).rgb * ((x2_f - ab.x)*(y2_f - ab.y)) / denom;
-  texcolor += textureLoad(texture, UV12, 0).rgb * ((x2_f - ab.x)*(ab.y - y1_f)) / denom;
-  texcolor += textureLoad(texture, UV21, 0).rgb * ((ab.x - x1_f)*(y2_f - ab.y)) / denom;
-  texcolor += textureLoad(texture, UV22, 0).rgb * ((ab.x - x1_f)*(ab.y - y1_f)) / denom;
-  return texcolor;
-}
-
 
 fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
-  const sphere_c = vec3f(0.0, 0.5, 0.0);
-  const sphere_r = 0.3;
+  const sphere_1_c = vec3f(420.0, 90.0, 370.0);
+  const sphere_2_c = vec3f(130.0, 90.0, 250.0);
+  const sphere_r = 90f;
 
-  const plane_point = vec3f(0.0, 0.0, 0.0);
-  const plane_onb = Onb(
-    vec3f(-1.0, 0.0, 0.0),
-    vec3f(0.0, 0.0, 1.0),
-    vec3f(0.0, 1.0, 0.0)
-  );
-  if( int_sphere(*ray, hit, sphere_c, sphere_r) ){(*ray).tmax = (*hit).distance;}
-  if(int_triangle(*ray, hit, 0)){ (*ray).tmax = (*hit).distance; }  
-
-  if( int_plane(*ray, hit, plane_point, plane_onb) ){
+  if(int_sphere(*ray, hit, sphere_1_c, sphere_r, shader_reflect)){
     (*ray).tmax = (*hit).distance;
   }
-  
+
+
+  if(int_sphere(*ray, hit, sphere_2_c, sphere_r, shader_glossy)){
+    (*ray).tmax = (*hit).distance;
+  }
+
+  // check outer binding box
+  if(int_aabb(ray)){
+    if(int_trimesh(ray, hit)){
+      (*ray).tmax = (*hit).distance;
+    }
+  }
 
   return (*hit).hit;
 }
 
-fn int_sphere(ray: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: f32) -> bool {
+
+fn int_sphere(ray: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: f32, shade_mode: u32) -> bool {
   const sphere_color = vec3f(0,0,0);
   const refr_exit= 1.5; // ray entering object
   const refr_enter= 0.667; // ray entering object
@@ -186,7 +177,7 @@ fn int_sphere(ray: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: f32)
       let pos = ray.origin + t * ray.direction;
       (*hit).position = pos;
       (*hit).normal = normalize(pos - center);
-      (*hit).shader = uniforms_int.glass_shader;
+      (*hit).shader = shade_mode;
       // we hit tangent, so no refraction should occur
       (*hit).refractive_ratio = 1.0;
     }
@@ -214,7 +205,7 @@ fn int_sphere(ray: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: f32)
       (*hit).shine = 42;
       (*hit).normal = normalize((*hit).position - center);
       // we need to see if the selected hit was entering or exiting the sphere
-      (*hit).shader = uniforms_int.glass_shader;
+      (*hit).shader = shade_mode;
       (*hit).refractive_ratio = refr_enter;
       // if ray exiting sphere rather than entering, flip refractive
       // ratio and normal direction
@@ -228,63 +219,120 @@ fn int_sphere(ray: Ray, hit: ptr<function, HitInfo>, center: vec3f, radius: f32)
   return (*hit).hit;
 }
 
-fn int_plane(ray: Ray, hit: ptr<function, HitInfo>, plane_point: vec3f, plane: Onb) -> bool{
-  const plane_color = vec3f(0.1, 0.7, 0.0);
+fn int_aabb(r: ptr<function, Ray>) -> bool {
+  let p1 = (aabb.min - r.origin) / r.direction;
+  let p2 = (aabb.max - r.origin) / r.direction;
 
-  let omega_dot_n = dot(ray.direction, plane.normal);
-  if(abs(omega_dot_n) > 1e-4){
-    // make sure that the ray isnt parallel to 
-    // the plane (this would lead to a divide by 0 and would never intersect)
-    let t = dot((plane_point - ray.origin), plane.normal) / omega_dot_n;
-    if(ray.tmax >= t && ray.tmin <= t){
-      // good intersection!
-      (*hit).hit = true;
-      (*hit).distance = t;
-      // r(t) = o + t w
-      let x = ray.origin + t * ray.direction;
-      (*hit).position = x;
-      (*hit).normal = plane.normal;
-      (*hit).shader = uniforms_int.matte_shader;
-      // compute texture coordinates
-      // use tex_scale = 0.2
-
-      // find U,V coordinates from orthonormal basis
-      let offset = x - plane_point;
-      let u = dot(offset, plane.tangent);
-      let v = dot(offset, plane.binormal);
-      (*hit).texcoords = vec2f(u, v) * tex_scale;
-
-
-       // get color from texture
-      let texture_color = select(
-        plane_color, 
-        select(
-          texture_nearest(grass_texture, (*hit).texcoords),
-          texture_linear(grass_texture, (*hit).texcoords),
-          uniforms_int.use_linear != 0
-        ), 
-        uniforms_int.texture_enabled != 0
-      );
-      (*hit).color_amb = 0.1 * texture_color;
-      (*hit).color_diff = 0.9 * texture_color;
-    }
+  let pmin = min(p1, p2);
+  let pmax = max(p1, p2);
+  let tmin = max(pmin.x, max(pmin.y, pmin.z));
+  let tmax = min(pmax.x, min(pmax.y, pmax.z));
+  if(tmin > tmax || tmin > r.tmax || tmax < r.tmin){
+    // ray doesnt intersect AABB
+    return false;
   }
-
-  return (*hit).hit;
+  // ray does intersect, constrain search to AABB
+  r.tmin = max(tmin - 1e-3f, r.tmin);
+  r.tmax = min(tmax + 1e-3f, r.tmax);
+  return true;
 }
-fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
-  const triangle_color = vec3f(0.4, 0.3, 0.2);
 
+const MAX_LEVEL = 20u;
+const BSP_LEAF = 3u;
+var  <private> branch_node: array<vec2u, MAX_LEVEL>; 
+var  <private> branch_ray: array<vec2f, MAX_LEVEL>;
+
+fn int_trimesh(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool{
+  var branch_level = 0u;
+  var near_node = 0u;
+  var far_node = 0u;
+  var t = 0.0f;
+  var node = 0u;
+  for(var i = 0u; i <= MAX_LEVEL; i ++){
+    let tree_node = bspTree[node];
+    // if tree_node.x has the 2 least significant bits set
+    let node_axis_leaf = tree_node.x &3u;
+    if(node_axis_leaf == BSP_LEAF){
+      // leaf found
+      let node_count = tree_node.x >> 2u;
+      let node_id = tree_node.y;
+      var found = false;
+      for(var j = 0u; j < node_count; j++){
+        let obj_idx = treeIds[node_id + j];
+        if(int_triangle(*ray, hit, obj_idx)){
+          (*ray).tmax = (*hit).distance;
+          found = true;
+        }
+      }
+      if(found){ return true;}
+      else if(0u == branch_level){
+        // traversed whole tree, no intersection
+        return false;
+      }
+      else {
+        branch_level --;
+        i = branch_node[branch_level].x;
+        node = branch_node[branch_level].y;
+        (*ray).tmin = branch_ray[branch_level].x;
+        (*ray).tmax = branch_ray[branch_level].y;
+        continue;
+      }
+    }
+    let axis_direction = (*ray).direction[node_axis_leaf];
+    let axis_origin = (*ray).origin[node_axis_leaf];
+    if(axis_direction >= 0.0){
+      near_node = tree_node.z; // left node
+      far_node = tree_node.w; // right
+    } else {
+      near_node = tree_node.w; // right
+      far_node = tree_node.z; // left
+    }
+    let node_plane = bspPlanes[node];
+    var denom = axis_direction;
+    if(abs(denom) < 1e-8){
+      if(denom < 0){
+        denom = -1e-8;
+      } else {
+        denom = 1e-8;
+      }
+    }
+    t = (node_plane - axis_origin) / denom;
+    if(t >= (*ray).tmax){
+      node = near_node;
+    } else if(t <= (*ray).tmin) {
+      node = far_node;
+    } else {
+      branch_node[branch_level].x = i;
+      branch_node[branch_level].y = far_node;
+      branch_ray[branch_level].x = t;
+      branch_ray[branch_level].y = (*ray).tmax;
+      branch_level ++;
+      (*ray).tmax = t;
+      node = near_node;
+    }
+
+  }
+  return false;
+}
+
+fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
   // verts is a u32 representing the vertices of the triangle 
   let verts = vert_indices[i].xyz;
   let v = array<vec3f, 3>(
-    vert_positions[verts[0]].xyz,
-    vert_positions[verts[1]].xyz,
-    vert_positions[verts[2]].xyz
+    vert_attribs[verts[0]].pos.xyz,
+    vert_attribs[verts[1]].pos.xyz,
+    vert_attribs[verts[2]].pos.xyz
+  );
+
+  let norms = array<vec3f, 3>(
+    vert_attribs[verts[0]].normal.xyz,
+    vert_attribs[verts[1]].normal.xyz,
+    vert_attribs[verts[2]].normal.xyz,
   );
 
   let e0 = v[1] - v[0];
   let e1 = v[2] - v[0];
+  // crude normal for intersection calculation
   let n = cross(e0, e1);
   let omega_dot_n = dot(ray.direction, n);
 
@@ -299,14 +347,24 @@ fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
       if(beta >= 0){
         let gamma = -dot(partial, e0) / omega_dot_n;
         if(gamma >= 0 && (beta + gamma) <= 1){
-          (*hit).color_amb = triangle_color * 0.1;
-          (*hit).color_diff = triangle_color * 0.9;
+          let matIndex = vert_indices[i].w;
+          if (matIndex >= arrayLength(&materials)) {
+            // Handle invalid material index
+            (*hit).color_amb = vec3f(1.0);
+          } else {
+            let material = materials[matIndex];
+            (*hit).color_diff = material.diffuse.rgb;
+            (*hit).color_amb = material.emission.rgb;
+          }
           (*hit).hit = true;
           (*hit).distance = t;
           // r(t) = o + t w
           (*hit).position = ray.origin + t * ray.direction;
-          (*hit).normal = normalize(n);
-          (*hit).shader = uniforms_int.matte_shader;
+          // find more precise normal for shading based on barycentric coordinates
+          // weighted of the vertex normals
+          let alpha = 1.0 - (beta + gamma);
+          (*hit).normal = normalize(alpha * norms[0] + beta * norms[1] + gamma*norms[2]);
+          (*hit).shader = shader_matte;
         }
       }
     }
@@ -321,14 +379,42 @@ struct Light {
   dist: f32,
 }
 
-fn sample_point_light(p: vec3f) -> Light {
-  // return light info at the point p
-  // light source is at (0, 1, 0) w/ intensity (pi, pi, pi)
-  let x = vec3f(0.0, 1.0, 0.0);
-  let I = vec3f(3.14159, 3.14159, 3.14159);
-  let dist = distance(p, x);
-  let wi = normalize(x - p);
-  let Li = I / pow(dist, 2);
+// sample triangle area light with index idx to point p 
+fn sample_trimesh_light(p: vec3f, idx: u32) -> Light {
+  let index = light_indices[idx];
+  let verts = vert_indices[index].xyz;
+  // coords of the 3 corner vertices of light
+  let v = array<vec3f, 3>(
+    vert_attribs[verts[0]].pos.xyz,
+    vert_attribs[verts[1]].pos.xyz,
+    vert_attribs[verts[2]].pos.xyz
+  );
+  // vertex normals
+  let norms = array<vec3f, 3>(
+    vert_attribs[verts[0]].normal.xyz,
+    vert_attribs[verts[1]].normal.xyz,
+    vert_attribs[verts[2]].normal.xyz,
+  );
+  // in barycentric coordinates, center of triangle
+  // is where alpha = beta = gamma = 0.333
+
+  let e0 = v[1] - v[0];
+  let e1 = v[2] - v[0];
+
+  let center = (e0 + e1) * 0.333 + v[0];
+  let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
+
+  // direction from point to light
+  let wi = normalize(center - p);
+  var Le = materials[vert_indices[index].w].emission.rgb;
+
+
+  let areaCross = cross(e0, e1);
+  // magnitude of vector = sqrt(dot(vector, vector))
+  let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
+  let dist = distance(p, center); // convert from mm to meters
+
+  var Li = dot(-wi, norm) * Le * area  * pow(1/dist, 2);
 
   return Light(Li, wi, dist);
 }
@@ -340,38 +426,47 @@ fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
 }
 
 fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-  // find light intensity Li at intersection point
-  let light = sample_point_light((*hit).position);
-  // see if path to the light intersects an object (ie we are in shadow)
   var Lr = ((*hit).color_amb / 3.14159);
+  var Lr_if_visible = vec3f(0);
+  var light = Light(vec3f(0), vec3f(0), 0f);
+  let numTriangles = arrayLength(&light_indices);
+  for(var idx = u32(0); idx < numTriangles; idx ++){
+    light = sample_trimesh_light((*hit).position, idx);
+    Lr_if_visible += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);
+  }
+  // distant area light, so just use one sample point for visibility chekc
   if(!check_shadow((*hit).position, light.wi, light.dist)){
-    Lr += ((*hit).color_diff / (3.14159)) * light.Li * dot((*hit).normal, light.wi);
+    Lr += Lr_if_visible;
   }
   // use ambient light and reflected light
   return Lr;
 }
 
 fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
-  let light = sample_point_light((*hit).position);
-  
-
   let wo = normalize((*r).origin - (*hit).position);
-  let wr = reflect(-light.wi, (*hit).normal);
-
   var Lr = ((*hit).color_amb / 3.14159);
-  if(!check_shadow((*hit).position, light.wi, light.dist)){
-    Lr += 
-    light.Li * 
-    dot(light.wi, (*hit).normal) *
-    (
-      ((*hit).color_diff / 3.14159) + 
+
+  let numTriangles = arrayLength(&light_indices);
+  for(var idx = u32(0); idx < numTriangles; idx ++){
+    let light = sample_trimesh_light((*hit).position, idx);
+    // see if path to the light intersects an object (ie we are in shadow)
+    if(!check_shadow((*hit).position, light.wi, light.dist)){
+      let wr = reflect(light.wi, (*hit).normal);
+      Lr += 
+      light.Li * 
+      dot(light.wi, (*hit).normal) *
       (
-        (*hit).color_specular * 
-        ((*hit).shine + 2) * 0.15915494309 * // 1/2pi = 0.15915494309
-        pow(max(dot(wo, wr), 0.0), (*hit).shine)
-      )
-    );
+        ((*hit).color_diff / 3.14159) + 
+        (
+          (*hit).color_specular * 
+          ((*hit).shine + 2) * 0.15915494309 * // 1/2pi = 0.15915494309
+          pow(max(dot(wo, wr), 0.0), (*hit).shine)
+        )
+      );
+    }
   }
+
+  
 
   if(dot(Lr, Lr) < 0.5){
     return vec3f(0);
@@ -383,7 +478,7 @@ fn shade_refract(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   // case 3 indicates a refractive material. The ray is re-cast but
   // deflected according to the relative indices or refraction
   (*r).origin = (*hit).position; // cast ray from intersection position
-  (*r).tmin = 1e-4; // make sure we dont collide with the surface the ray is reflected off
+  (*r).tmin = 1e-2; // make sure we dont collide with the surface the ray is reflected off
   (*r).tmax = 1e6; // reset tmax b/c casting a new ray
   (*hit).hit = false; // tell iterator to re-trace ray
 
@@ -413,8 +508,8 @@ fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f{
       (*hit).hit = false; // tell iterator to re-trace ray
       (*r).origin = (*hit).position; // cast ray from intersection position
       (*r).direction = reflect((*r).direction, (*hit).normal); // reflect the incoming ray about the surface normal
-      (*r).tmin = 1e-4; // make sure we dont collide with the surface the ray is reflected off
-      (*r).tmax = 10000;
+      (*r).tmin = 1e-2; // make sure we dont collide with the surface the ray is reflected off
+      (*r).tmax = 1e10;
       return vec3f(0.0);
     } 
     case shader_refract {
@@ -434,7 +529,7 @@ fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f{
 // the fragment defines the shader function run at each pixel
 @fragment
 fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f{
-  const bgcolor = vec4f(0.1, 0.3, 0.6, 1.0);
+  const bgcolor = vec4f(0.1, 0.3, 0.6, 0.9);
   const max_depth = 10;
   var result = vec3f(0.0);
   // iterate over each sub-pixel position
@@ -464,5 +559,4 @@ fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f{
     result += inv_subpixels * thisResult;
   }
   return vec4f(result, bgcolor.a); 
-  //return vec4f(f32(uniforms_int.subdivisions) / 10.0, 0, 0, 1.0);
 }

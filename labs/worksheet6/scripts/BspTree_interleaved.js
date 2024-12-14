@@ -199,6 +199,8 @@ function build_bsp_tree(drawingInfo, device, buffers)
   });
   device.queue.writeBuffer(buffers.colors, 0, drawingInfo.colors);
 
+  console.log("indices:");
+  console.log(drawingInfo.indices);
   buffers.indices = device.createBuffer({
     size: drawingInfo.indices.byteLength, 
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
@@ -229,6 +231,12 @@ function build_bsp_tree(drawingInfo, device, buffers)
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   device.queue.writeBuffer(buffers.aabb, 0, bbox);
+
+  console.log("BSP Stuff:");
+  // In build_bsp_tree:
+console.log("First 20 tree nodes:", bspTree.slice(0, 80)); // First 20 nodes (4 values each)
+console.log("First 20 planes:", bspPlanes.slice(0, 20));
+console.log("First 20 treeIds:", treeIds.slice(0, 20));
 
   return buffers;
 }

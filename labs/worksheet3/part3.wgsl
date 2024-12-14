@@ -376,30 +376,27 @@ fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
 
 fn shade_refract(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   // case 3 indicates a refractive material. The ray is re-cast but
-      // deflected according to the relative indices or refraction
-      (*r).origin = (*hit).position; // cast ray from intersection position
-      (*r).tmin = 1e-4; // make sure we dont collide with the surface the ray is reflected off
-      (*r).tmax = 10000; // reset tmax b/c casting a new ray
-      (*hit).hit = false; // tell iterator to re-trace ray
+  // deflected according to the relative indices or refraction
+  (*r).origin = (*hit).position; // cast ray from intersection position
+  (*r).tmin = 1e-4; // make sure we dont collide with the surface the ray is reflected off
+  (*r).tmax = 1e6; // reset tmax b/c casting a new ray
+  (*hit).hit = false; // tell iterator to re-trace ray
 
-      // bend the direction by the ratio of refractive indices
-      // cos(in) = ( r \cdot n ) / (|r|*|n|)
-      let cos_in = dot((*r).direction, (*hit).normal);
-      let sin_sq_in = 1 - (cos_in*cos_in);
-      let sin_sq_out = 
-        ((*hit).refractive_ratio * (*hit).refractive_ratio)
-        * sin_sq_in;
-      let cos_sq_out = 1 - sin_sq_out;
-      if(cos_sq_out < 0){
-        // total internal reflection
-        (*r).direction = reflect((*r).direction, (*hit).normal); // reflect the incoming ray about the surface normal
-        return vec3f(0);
-      }
-      let n = (*hit).refractive_ratio;
-      (*r).direction = 
-        (*hit).normal * (n * cos_in - sqrt(cos_sq_out))
-        + (*r).direction * n;
-      return vec3f(0);
+  let n = (*hit).refractive_ratio;
+  // bend the direction by the ratio of refractive indices
+  // cos(in) = ( r \cdot n ) / (|r|*|n|)
+  let cos_in = dot((*r).direction, (*hit).normal);
+  let sin_sq_in = (1.0 - cos_in * cos_in);
+  let sin_sq_out = (n * n) * sin_sq_in;
+  let cos_sq_out = 1.0 - sin_sq_out;
+  if(cos_sq_out < 0){
+    // total internal reflection
+    (*r).direction = reflect((*r).direction, (*hit).normal); // reflect the incoming ray about the surface normal
+    return vec3f(1);
+  }
+  (*r).direction = 
+      (n * (*r).direction) - (n  * cos_in + sqrt(cos_sq_out)) * (*hit).normal;
+  return vec3f(0);
 }
 
 fn shade(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f{

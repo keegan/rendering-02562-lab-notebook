@@ -377,6 +377,8 @@ OBJDoc.prototype.getDrawingInfo = function () {
     }
   }
 
+  console.log("Materials");
+  console.log(materials);
   return new DrawingInfo(attribs, colors, indices, materials, new Uint32Array(light_indices));
 }
 

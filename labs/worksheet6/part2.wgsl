@@ -26,6 +26,11 @@ struct VertexAttrib {
   normal: vec4f,
 }
 
+struct Material {
+  diffuse: vec4f,
+  emission: vec4f,
+}
+
 @group(0) @binding(0) var<uniform> uniforms_f: UniformsF;
 @group(0) @binding(1) var<uniform> uniforms_int: UniformsInt;
 // 3x3 jitter, 2 flaots (x, y) per point
@@ -34,11 +39,14 @@ struct VertexAttrib {
 @group(0) @binding(3) var<uniform> aabb: AABB;
 
 @group(0) @binding(4) var<storage> vert_attribs: array<VertexAttrib>;
-@group(0) @binding(6) var<storage> colors: array<vec4f>;
+@group(0) @binding(6) var<storage> materials: array<Material>; // colors
 @group(0) @binding(7) var<storage> vert_indices: array<vec4u>;
 @group(0) @binding(8) var<storage> treeIds: array<u32>;
 @group(0) @binding(9) var<storage> bspTree: array<vec4u>;
 @group(0) @binding(10) var<storage> bspPlanes: array<f32>;
+
+@group(0) @binding(11) var<storage> light_indices: array<u32>;
+
 
 @vertex
 fn main_vs(@builtin(vertex_index) VertexIndex: u32) -> VSOut {
@@ -148,7 +156,7 @@ fn int_aabb(r: ptr<function, Ray>) -> bool {
   }
   // ray does intersect, constrain search to AABB
   r.tmin = max(tmin - 1.0e-3f, r.tmin);
-  r.tmax = min(tmax - 1.0e-3f, r.tmax);
+  r.tmax = min(tmax + 1.0e-3f, r.tmax);
   return true;
 }
 
@@ -224,7 +232,6 @@ fn int_trimesh(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool{
 }
 
 fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
-  const triangle_color = vec3f(0.9);
   // verts is a u32 representing the vertices of the triangle 
   let verts = vert_indices[i].xyz;
   let v = array<vec3f, 3>(
@@ -256,8 +263,15 @@ fn int_triangle(ray: Ray, hit: ptr<function, HitInfo>, i: u32) -> bool {
       if(beta >= 0){
         let gamma = -dot(partial, e0) / omega_dot_n;
         if(gamma >= 0 && (beta + gamma) <= 1){
-          (*hit).color_diff = colors[vert_indices[i].w].rgb;
-          (*hit).color_amb = (*hit).color_diff * 0.1;
+          let matIndex = vert_indices[i].w;
+          if (matIndex >= arrayLength(&materials)) {
+            // Handle invalid material index
+            (*hit).color_amb = vec3f(1.0);
+          } else {
+            let material = materials[matIndex];
+            (*hit).color_diff = material.diffuse.rgb;
+            (*hit).color_amb = material.emission.rgb;
+          }
           (*hit).hit = true;
           (*hit).distance = t;
           // r(t) = o + t w
@@ -304,44 +318,44 @@ fn sample_directional_light(p: vec3f) -> Light {
 }
 
 // sample triangle area light with index idx to point p 
-// fn sample_trimesh_light(p: vec3f, idx: u32) -> Light {
-//   let index = light_indices[idx];
-//   let verts = vert_indices[index].xyz;
-//   // coords of the 3 corner vertices of light
-//   let v = array<vec3f, 3>(
-//     vert_positions[verts[0]].xyz,
-//     vert_positions[verts[1]].xyz,
-//     vert_positions[verts[2]].xyz
-//   );
-//   // vertex normals
-//   let norms = array<vec3f, 3>(
-//     vert_normals[verts[0]].xyz,
-//     vert_normals[verts[1]].xyz,
-//     vert_normals[verts[2]].xyz,
-//   );
-//   // in barycentric coordinates, center of triangle
-//   // is where alpha = beta = gamma = 0.333
+fn sample_trimesh_light(p: vec3f, idx: u32) -> Light {
+  let index = light_indices[idx];
+  let verts = vert_indices[index].xyz;
+  // coords of the 3 corner vertices of light
+  let v = array<vec3f, 3>(
+    vert_attribs[verts[0]].pos.xyz,
+    vert_attribs[verts[1]].pos.xyz,
+    vert_attribs[verts[2]].pos.xyz
+  );
+  // vertex normals
+  let norms = array<vec3f, 3>(
+    vert_attribs[verts[0]].normal.xyz,
+    vert_attribs[verts[1]].normal.xyz,
+    vert_attribs[verts[2]].normal.xyz,
+  );
+  // in barycentric coordinates, center of triangle
+  // is where alpha = beta = gamma = 0.333
 
-//   let e0 = v[1] - v[0];
-//   let e1 = v[2] - v[0];
+  let e0 = v[1] - v[0];
+  let e1 = v[2] - v[0];
 
-//   let center = (e0 + e1) * 0.333 + v[0];
-//   let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
+  let center = (e0 + e1) * 0.333 + v[0];
+  let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
 
-//   // direction from point to light
-//   let wi = normalize(center - p);
-//   var Le = materials[material_indices[index]].emission.rgb;
+  // direction from point to light
+  let wi = normalize(center - p);
+  var Le = materials[vert_indices[index].w].emission.rgb;
 
 
-//   let areaCross = cross(e0, e1);
-//   // magnitude of vector = sqrt(dot(vector, vector))
-//   let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
-//   let dist = distance(p, center); // convert from mm to meters
+  let areaCross = cross(e0, e1);
+  // magnitude of vector = sqrt(dot(vector, vector))
+  let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
+  let dist = distance(p, center); // convert from mm to meters
 
-//   let Li = dot(-wi, norm) * Le * area  * pow(1/dist, 2);
+  var Li = dot(-wi, norm) * Le * area  * pow(1/dist, 2);
 
-//   return Light(Li, wi, dist);
-// }
+  return Light(Li, wi, dist);
+}
 
 fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
   var lightray =  Ray(pos, lightdir, 10e-4, lightdist-10e-4);
@@ -349,11 +363,19 @@ fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
   return int_scene(&lightray, &lighthit);
 }
 
+
 fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   var Lr = ((*hit).color_amb / 3.14159);
-  let light = sample_directional_light((*hit).position);
+  var Lr_if_visible = vec3f(0);
+  var light = Light(vec3f(0), vec3f(0), 0f);
+  let numTriangles = arrayLength(&light_indices);
+  for(var idx = u32(0); idx < numTriangles; idx ++){
+    light = sample_trimesh_light((*hit).position, idx);
+    Lr_if_visible += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);
+  }
+  // distant area light, so just use one sample point for visibility chekc
   if(!check_shadow((*hit).position, light.wi, light.dist)){
-    Lr += ((*hit).color_diff / (3.14159)) * light.Li * dot((*hit).normal, light.wi);
+    Lr += Lr_if_visible;
   }
   // use ambient light and reflected light
   return Lr;

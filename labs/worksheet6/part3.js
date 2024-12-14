@@ -44,7 +44,7 @@ async function main() {
   
   
   const wgsl = device.createShaderModule({
-    code: await (await fetch("./part2.wgsl")).text()
+    code: await (await fetch("./part3.wgsl")).text()
   });
   
   const pipeline = device.createRenderPipeline({
@@ -86,7 +86,7 @@ async function main() {
 
 
   var obj_idx = 0;
-  var filename = "data/CornellBoxWithBlocks.obj";
+  var filename = "data/CornellBox.obj";
 
 
   var use_texture = 1;
@@ -94,7 +94,7 @@ async function main() {
   var cam_const = 1.0;
   var gloss_shader = 5;
   var matte_shader = 1;
-  const numDivisions = 3;
+  const numDivisions = 5;
   var uniforms_f = new Float32Array([aspect, cam_const]);
   var uniforms_int = new Int32Array([gloss_shader, matte_shader, use_texture, numDivisions, obj_idx]);
   
@@ -109,7 +109,7 @@ async function main() {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, 
   }); 
 
-  let jitter = new Float32Array(numDivisions * numDivisions * 2 * 2); // *2 to fit in vec4f for alignment
+  let jitter = new Float32Array(25 * 4); // *2 to fit in vec4f for alignment
   const jitterBuffer = device.createBuffer({
     size: jitter.byteLength, 
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, 
@@ -154,7 +154,16 @@ async function main() {
   console.log("done building tree");
 
 
-  const lightIndicesBuffer = device.createBuffer({
+  console.log("indices:");
+console.log(drawingInfo.indices);
+// To see every 4th element (material indices):
+console.log("material indices:");
+console.log(drawingInfo.indices.filter((_, i) => i % 4 === 3));
+  console.log("vertices:");
+console.log(drawingInfo.attribs.filter((_, i) => i % 8 < 3));
+  
+console.log("AABB:", root.bbox);
+const lightIndicesBuffer = device.createBuffer({
     size: drawingInfo.light_indices.byteLength,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
   });

@@ -261,7 +261,7 @@ fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
     let light = sample_trimesh_light((*hit).position, idx);
     // see if path to the light intersects an object (ie we are in shadow)
     if(!check_shadow((*hit).position, light.wi, light.dist)){
-      Lr += ((*hit).color_diff / (3.14159)) * light.Li * dot((*hit).normal, light.wi);
+      Lr += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);
     }
   }
   // use ambient light and reflected light
