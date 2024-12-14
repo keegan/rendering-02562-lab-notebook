@@ -263,7 +263,7 @@ fn sample_trimesh_light(p: vec3f) -> Light {
 }
 
 fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
-  var lightray =  Ray(pos, lightdir, 10e-4, lightdist-10e-4);
+  var lightray =  Ray(pos, lightdir, 1e-2, lightdist -1e-2);
   var lighthit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 1.0, 1.0, 0, vec2f(0.0));
   return int_scene(&lightray, &lighthit);
 }
