@@ -379,45 +379,67 @@ struct Light {
   dist: f32,
 }
 
-// sample triangle area light with index idx to point p 
-fn sample_trimesh_light(p: vec3f, idx: u32) -> Light {
-  let index = light_indices[idx];
-  let verts = vert_indices[index].xyz;
-  // coords of the 3 corner vertices of light
-  let v = array<vec3f, 3>(
-    vert_attribs[verts[0]].pos.xyz,
-    vert_attribs[verts[1]].pos.xyz,
-    vert_attribs[verts[2]].pos.xyz
-  );
-  // vertex normals
-  let norms = array<vec3f, 3>(
-    vert_attribs[verts[0]].normal.xyz,
-    vert_attribs[verts[1]].normal.xyz,
-    vert_attribs[verts[2]].normal.xyz,
-  );
-  // in barycentric coordinates, center of triangle
-  // is where alpha = beta = gamma = 0.333
+// sample all triangles of area light
+fn sample_trimesh_light(p: vec3f) -> Light {
+  let numTriangles = arrayLength(&light_indices);
+  // Light(Li, wi, dist);
+  // these are averages weighted by area of triangle
+  var lightAreaIntensity = vec3f(0);
+  var totalArea = 0f;
+  var lightCenter = vec3f(0);
+  var lightNorm = vec3f(0);
+  var lightDist = 0f;
+  for(var idx = u32(0); idx < numTriangles; idx ++){
+    // sample each triangle, find the
+    // total emission and center point
+    let index = light_indices[idx];
+    let verts = vert_indices[index].xyz;
+    // coords of the 3 corner vertices of light
+    let v = array<vec3f, 3>(
+      vert_attribs[verts[0]].pos.xyz,
+      vert_attribs[verts[1]].pos.xyz,
+      vert_attribs[verts[2]].pos.xyz
+    );
+    // vertex normals
+    let norms = array<vec3f, 3>(
+      vert_attribs[verts[0]].normal.xyz,
+      vert_attribs[verts[1]].normal.xyz,
+      vert_attribs[verts[2]].normal.xyz,
+    );
+    // in barycentric coordinates, center of triangle
+    // is where alpha = beta = gamma = 0.333
 
-  let e0 = v[1] - v[0];
-  let e1 = v[2] - v[0];
+    let e0 = v[1] - v[0];
+    let e1 = v[2] - v[0];
 
-  let center = (e0 + e1) * 0.333 + v[0];
-  let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
+    let areaCross = cross(e0, e1);
+    // magnitude of vector = sqrt(dot(vector, vector))
+    let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
+    totalArea += area;
 
-  // direction from point to light
-  let wi = normalize(center - p);
-  var Le = materials[vert_indices[index].w].emission.rgb;
+    let center = (e0 + e1) * 0.333 + v[0];
+    lightCenter += center * area;
+    let norm = (norms[0] + norms[1] + norms[2]) * 0.3333;
+    lightNorm += norm * area;
+
+    // direction from point to light
+    var Le = materials[vert_indices[index].w].emission.rgb;
 
 
-  let areaCross = cross(e0, e1);
-  // magnitude of vector = sqrt(dot(vector, vector))
-  let area = length(areaCross) * 0.5; // area = 1/2 | e0 X e1 |
-  let dist = distance(p, center); // convert from mm to meters
+    let dist = distance(p, center); // convert from mm to meters
+    lightAreaIntensity += Le * area * pow(1/dist, 2);
+  }
+  // take area-weighted averages
+  lightNorm = normalize(lightNorm / totalArea);
+  lightCenter /= totalArea;
 
-  var Li = dot(-wi, norm) * Le * area  * pow(1/dist, 2);
+  let wi = normalize(lightCenter - p);
+  let Li = dot(-wi, lightNorm) * lightAreaIntensity;
 
-  return Light(Li, wi, dist);
+  return Light(Li, wi, distance(p, lightCenter));
+
 }
+
 
 fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
   var lightray =  Ray(pos, lightdir, 10e-4, lightdist-10e-4);
@@ -427,16 +449,10 @@ fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
 
 fn lambert(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   var Lr = ((*hit).color_amb / 3.14159);
-  var Lr_if_visible = vec3f(0);
-  var light = Light(vec3f(0), vec3f(0), 0f);
-  let numTriangles = arrayLength(&light_indices);
-  for(var idx = u32(0); idx < numTriangles; idx ++){
-    light = sample_trimesh_light((*hit).position, idx);
-    Lr_if_visible += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);
-  }
+  let light = sample_trimesh_light((*hit).position);
   // distant area light, so just use one sample point for visibility chekc
   if(!check_shadow((*hit).position, light.wi, light.dist)){
-    Lr += Lr_if_visible;
+    Lr += ((*hit).color_diff / (3.14159)) * light.Li * max(dot((*hit).normal, light.wi), 0.0);;
   }
   // use ambient light and reflected light
   return Lr;
@@ -446,24 +462,21 @@ fn phong(r: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> vec3f {
   let wo = normalize((*r).origin - (*hit).position);
   var Lr = ((*hit).color_amb / 3.14159);
 
-  let numTriangles = arrayLength(&light_indices);
-  for(var idx = u32(0); idx < numTriangles; idx ++){
-    let light = sample_trimesh_light((*hit).position, idx);
-    // see if path to the light intersects an object (ie we are in shadow)
-    if(!check_shadow((*hit).position, light.wi, light.dist)){
-      let wr = reflect(light.wi, (*hit).normal);
-      Lr += 
-      light.Li * 
-      dot(light.wi, (*hit).normal) *
+  let light = sample_trimesh_light((*hit).position);
+  // see if path to the light intersects an object (ie we are in shadow)
+  if(!check_shadow((*hit).position, light.wi, light.dist)){
+    let wr = reflect(light.wi, (*hit).normal);
+    Lr += 
+    light.Li * 
+    dot(light.wi, (*hit).normal) *
+    (
+      ((*hit).color_diff / 3.14159) + 
       (
-        ((*hit).color_diff / 3.14159) + 
-        (
-          (*hit).color_specular * 
-          ((*hit).shine + 2) * 0.15915494309 * // 1/2pi = 0.15915494309
-          pow(max(dot(wo, wr), 0.0), (*hit).shine)
-        )
-      );
-    }
+        (*hit).color_specular * 
+        ((*hit).shine + 2) * 0.15915494309 * // 1/2pi = 0.15915494309
+        pow(max(dot(wo, wr), 0.0), (*hit).shine)
+      )
+    );
   }
 
   
