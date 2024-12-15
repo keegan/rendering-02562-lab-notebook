@@ -160,7 +160,7 @@ fn int_aabb(r: ptr<function, Ray>) -> bool {
   }
   // ray does intersect, constrain search to AABB
   r.tmin = max(tmin - 1.0e-3f, r.tmin);
-  r.tmax = min(tmax - 1.0e-3f, r.tmax);
+  r.tmax = min(tmax + 1.0e-3f, r.tmax);
   return true;
 }
 

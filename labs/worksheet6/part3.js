@@ -94,7 +94,7 @@ async function main() {
   var cam_const = 1.0;
   var gloss_shader = 5;
   var matte_shader = 1;
-  const numDivisions = 5;
+  var numDivisions = 5;
   var uniforms_f = new Float32Array([aspect, cam_const]);
   var uniforms_int = new Int32Array([gloss_shader, matte_shader, use_texture, numDivisions, obj_idx]);
   
@@ -204,6 +204,22 @@ const lightIndicesBuffer = device.createBuffer({
 
   ], 
   });
+
+
+  if (document.querySelector('input[name="jitter"]')) {
+    document.querySelectorAll('input[name="jitter"]').forEach((elem) => {
+      elem.addEventListener("change", function(event) {
+        if(event.target.value == 1){
+          numDivisions =  5;
+        } else {
+          numDivisions =  1;
+        }
+        uniforms_int[3] = numDivisions;
+        device.queue.writeBuffer(uniformBuffer_int, 0, uniforms_int);
+        requestAnimationFrame(animate);
+      });
+    });
+  }
 
   function animate(){
     render(device, ctx, pipeline, bindGroup);
