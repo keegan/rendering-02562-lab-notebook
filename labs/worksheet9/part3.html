@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>KPL Worksheet 9</title>
+  <script type="text/javascript" src="scripts/vec3.js"></script>
+  <script type="text/javascript" src="scripts/OBJParser_interleaved.js"></script>
+  <script type="text/javascript" src="scripts/Aabb.js"></script>
+  <script type="text/javascript" src="scripts/BspTree_interleaved.js"></script>
+  <script type="text/javascript" src="scripts/hdrpng.min.js"></script>
+  <script src="part3.js"></script>
+</head>
+<body>
+  <div>
+    <h4>Shader</h4>
+    <input type="radio"  id="gloss2" name="glossy" value="2" />
+    <label for="gloss1">Mirror</label>
+
+    <input type="radio" id="gloss1" checked="true" name="glossy" value="1" />
+    <label for="gloss2">Diffuse</label>
+
+    <input type="radio" id="gloss0" name="glossy" value="0" />
+    <label for="gloss3">Plain Color</label>
+  </div>
+
+  <h3>Progressive Sampling</h3>
+  <input type="submit" value="Run/Stop" id="run"/>
+  <div id="framecount"></div>
+  <canvas width="512" height="512"></canvas>
+
+</body>
+</html>
