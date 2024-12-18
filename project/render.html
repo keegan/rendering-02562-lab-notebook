@@ -1,21 +1,261 @@
 <!DOCTYPE html>
-
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>KPL Worksheet 7</title>
-  <script type="text/javascript" src="scripts/vec3.js"></script>
-  <script type="text/javascript" src="scripts/OBJParser_interleaved.js"></script>
-  <script type="text/javascript" src="scripts/Aabb.js"></script>
-  <script type="text/javascript" src="scripts/BspTree_interleaved.js"></script>
-  <script src="script.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPL Project - Depth of Field and Bokeh</title>
+    <script type="text/javascript" src="scripts/vec3.js"></script>
+    <script type="text/javascript" src="scripts/OBJParser_interleaved.js"></script>
+    <script type="text/javascript" src="scripts/Aabb.js"></script>
+    <script type="text/javascript" src="scripts/BspTree_interleaved.js"></script>
+    <script src="script.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #f6f8fa 0%, #eef2f5 100%);
+            color: #2c3e50;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .main-title {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: 600;
+            font-size: 2rem;
+            background: linear-gradient(120deg, #2c3e50, #3498db);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .controls-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(52, 152, 219, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .control-group {
+            flex: 1;
+            min-width: 150px;
+            position: relative;
+            padding: 15px;
+            border-radius: 8px;
+            background: rgba(246, 248, 250, 0.5);
+            transition: transform 0.2s ease;
+        }
+
+        .control-group:hover {
+            transform: translateY(-2px);
+        }
+
+        .control-group h4 {
+            margin: 0 0 12px 0;
+            color: #2c3e50;
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+
+        .slider {
+            width: 100%;
+            margin: 10px 0;
+            -webkit-appearance: none;
+            background: linear-gradient(90deg, #3498db 0%, #2980b9 100%);
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border: 2px solid #3498db;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+        }
+
+        select {
+            width: 100%;
+            padding: 8px;
+            background: white;
+            border: 1px solid #e1e8f0;
+            border-radius: 6px;
+            color: #2c3e50;
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease;
+        }
+
+        select:hover {
+            border-color: #3498db;
+        }
+
+        #run {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
+        }
+
+        #run:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+        }
+
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .canvas-group {
+            flex: 1;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(52, 152, 219, 0.1);
+            transition: transform 0.2s ease;
+        }
+
+        .canvas-group:hover {
+            transform: translateY(-2px);
+        }
+
+        .canvas-group h3 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .canvas-group h3::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #3498db;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .canvas-group p {
+            margin: 5px 0;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #e1e8f0;
+            border-radius: 6px;
+            transition: border-color 0.2s ease;
+        }
+
+        canvas:hover {
+            border-color: #3498db;
+        }
+
+        .attribution {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            color: #666;
+            font-size: 0.9rem;
+            border-top: 1px solid rgba(52, 152, 219, 0.1);
+        }
+
+        .attribution a {
+            color: #3498db;
+            text-decoration: none;
+            transition: color 0.2s ease;
+            font-weight: 500;
+        }
+
+        .attribution a:hover {
+            color: #2980b9;
+            text-decoration: underline;
+        }
+    </style>
 </head>
 <body>
-  <h3>Depth of field</h3>
-  <input type="range" min="1" max="16" value="2.2" class="slider" id="fstop">
-  <input type="range" min="1" max="400" value="500" class="slider" id="fdist">
-  <input type="submit" value="Run/Stop" id="run"/>
-  <div id="framecount"></div>
-  <canvas width="512" height="512"></canvas>
+    <h1 class="main-title">Depth of Field and Bokeh</h1>
+    
+    <div class="controls-container">
+        <div class="control-group">
+            <h4>F/Stop</h4>
+            <!-- this slider lets you select the stop, then we calculate the stop automagically -->
+             <!-- Do this in half stops from f1.0 - f32 -->
+              <!-- that's stops 0 to 10 -->
+            <input type="range" min="0" max="10" value="2" class="slider" id="fstop">
+            <!-- the 5th stop = f5.6 -->
+            <output>f2</output>
+        </div>
+        <div class="control-group">
+            <h4>Focus Distance</h4>
+            <input type="range" min="1" max="1118" value="400" class="slider" id="fdist">
+            <output>400</output>
+        </div>
+        <div class="control-group">
+            <h4>Aperture Shape</h4>
+            <select id="apertureshape" size="7">
+                <option value="0">Circle</option>
+                <option value="1">Square</option>
+                <option value="2">Triangle</option>
+                <option value="3">Hexagon</option>
+                <option value="4"selected>Star</option>
+                <option value="5">Pentagon</option>
+                <option value="6">Slit</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <h4>Aperture Rotation</h4>
+            <input type="range" min="0" max="180" value="90" class="slider" id="arot">
+            <output>90</output>
+        </div>
+        <div class="control-group">
+            <input type="submit" value="Run/Stop" id="run"/>
+            <div id="framecount"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div class="canvas-group">
+            <h3>Rendered Output</h3>
+            <canvas width="512" height="512" id="wgslcanvas"></canvas>
+        </div>
+        <div class="canvas-group">
+            <h3>Overhead View (Focus Plane)</h3>
+            <p>Click on this map to set focus</p>
+            <p>Dotted focus line indicates looking through the mirror</p>
+            <canvas width="512" height="512" id="overheadcanvas"></canvas>
+        </div>
+    </div>
+    <div class="attribution">
+        Application code by Keegan Lanzillotta • Interface styling by <a href="https://claude.ai" target="_blank">Claude</a>
+    </div>
 </body>
 </html>

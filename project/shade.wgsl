@@ -8,12 +8,15 @@ struct UniformsF { // float values
   gamma: f32,
   aperture: f32, // aperture f stop
   fdist: f32, // focus distance
+  aperture_rotation: f32 // rotation in degrees
 }
 struct UniformsInt { // unsigned int values
   canvas_width: u32,
   canvas_height: u32,
   frame_num: u32,
+  aperture_shape: u32,
 }
+
 
 // Axis-Aligned Bounding box (box between the points min and max)
 struct AABB {
@@ -46,6 +49,7 @@ struct Material {
 
 @group(0) @binding(11) var<storage> light_indices: array<u32>;
 @group(0) @binding(12) var renderTexture: texture_2d<f32>;
+@group(0) @binding(13) var wallTexture: texture_2d<f32>;
 
 
 @vertex
@@ -110,12 +114,12 @@ fn rnd(prev: ptr<function, u32>) -> f32 {
   return f32(mcg31(prev)) / f32(0x80000000);
 }
 
-const tex_scale = 0.02;
+const tex_scale = 3e-3;
 // these are all arrays so we can choose the settings
 // for the loaded OBJ file
 // eye point
 // these are in the order bunny, teapot, dragon
-const e = vec3f(277, 275.0, -570.0);
+const e = vec3f(277, 275.0, -560.0);
 // camera constant
 const d = 1.0f;
 // up vector
@@ -151,7 +155,9 @@ fn int_plane_pt(origin: vec3f, raydir: vec3f, plane_point: vec3f, planenormal: v
 fn sample_unity_circle(seed: ptr<function, u32>) -> vec2f {
   // first sample on a unit-radius circle
   let theta = rnd(seed) * radians(360f); // radians(360) = 2pi
-  let r = sqrt(rnd(seed)); // sqrt(rnd) gives equal distribution across area of circle
+  let r = sqrt(rnd(seed)) * 0.564189583548; // sqrt(rnd) gives equal distribution across area of circle
+  // r is divided by sqrt(pi) ... pi^(-1) = 0.564189583548, 
+  // so that the area is 1
 
   let x = r * cos(theta);
   let y = r * sin(theta);
@@ -164,8 +170,10 @@ fn sample_unity_rect(seed: ptr<function, u32>, aspect: f32, skew: f32) -> vec2f 
   // so aspect = 1 is square
   // aspect = 2 is wider than tall
   // aspect = 0.5 is taller than wide
-  let x = rnd(seed) / aspect;
-  let y = rnd(seed) * aspect;
+
+  // want to be centered at origin so get results on [-1/2, 1/2)
+  let x = (rnd(seed) - 0.5) / aspect;
+  let y = (rnd(seed) - 0.5) * aspect;
 
   // rotate by angle skew
   // rotation matrix
@@ -181,8 +189,136 @@ fn sample_unity_rect(seed: ptr<function, u32>, aspect: f32, skew: f32) -> vec2f 
   return vec2f(x_rotated, y_rotated);
 }
 
+
+fn sample_unity_hex(seed: ptr<function, u32>, skew: f32) -> vec2f {
+  // choose one of 6 triangles
+  let tri_num = floor(rnd(seed) * 6f);
+  const shift_r = 0.877382675302; // triangle r 
+
+  // find point in the request triangle, then translate it to have its center at the center 
+  // of this segment of the hexagon
+  let translation = shift_r * vec2f(
+    cos(radians(60.0) * tri_num),
+    sin(radians(60.0) * tri_num)
+  );
+  const skew_factor = radians(60);
+  // default triangle points to the right, which in our hexagon is triangle 3
+  // so subtract 3 from tri_num to find the # of 60degree rotations needed
+  let tri_sample = sample_unity_tri(seed, skew_factor * (tri_num - 3));
+  let tri_sample_translated = tri_sample + translation;
+
+  let cos_theta = cos(skew);
+  let sin_theta = sin(skew);
+
+  let rotated = vec2f(
+    tri_sample_translated.x * cos_theta - tri_sample_translated.y * sin_theta,
+    tri_sample_translated.x * sin_theta + tri_sample_translated.y * cos_theta
+  );
+
+  const area_scale = 0.40824829046; //sqrt(1/6)
+
+  // translate then scale for whole hexagon to have unity area (each triangle has area 1/6)
+  return rotated * area_scale;
+}
+
+
+
+fn sample_unity_pent(seed: ptr<function, u32>, skew: f32) -> vec2f {
+  // choose one of 5 triangles
+  let tri_num = floor(rnd(seed) * 5f);
+  const shift_r = 0.8196266435; // triangle r (after stretching)
+
+  // find point in the request triangle, then translate it to have its center at the center 
+  // of this segment of the pentagon
+  // each triangle is 72 degrees offset
+  let angle = (radians(72.0) * tri_num) + skew;
+  let translation = shift_r * vec2f(
+     cos(angle + 3.14159),
+    sin(angle + 3.14159)
+  );
+
+  // default triangle is equlateral.. so sample at angle 0 then we can stretch x and y before rotating and translating
+  let tri_sample = sample_unity_tri(seed, 0.0);
+  const stretch_x = 0.934172358963; // cos(36)/cos(30)
+  const stretch_y = 1.17557050458; // sin(36 deg)/sin(30)
+  let tri_stretched = vec2f(
+    tri_sample.x * stretch_x,
+    tri_sample.y * stretch_y
+  );
+
+  let cos_theta = cos(angle);
+  let sin_theta = sin(angle);
+
+  let tri_rotated = vec2f(
+    tri_stretched.x * cos_theta - tri_stretched.y * sin_theta,
+    tri_stretched.x * sin_theta + tri_stretched.y * cos_theta,
+  );
+
+  const area_scale = 0.4472135955; // sqrt(1/5)
+
+  // translate then scale for whole hexagon to have unity area (each triangle has area 1/6)
+  return (tri_rotated + translation) * area_scale;
+}
+
+fn sample_unity_star(seed: ptr<function, u32>, skew: f32) -> vec2f {
+  // we model a pentagram as a pentagon in the middle and 5 triangles around it
+  // first find the relative areas of the pentagon vs triangles
+  // area of a pentagon is (side-length)^2 * (1/4) * sqrt(5*(5+2sqrt(5)))
+  // = (side_length)^2 * 
+  // choose one of 5 triangles
+  const pent_area_factor = 1.72047740059;
+  // pentagon area = side_length^2 * pent_area_factor
+  // area of equilateral triangle is
+  // sqrt(3)/4 * (side_length)^2
+  // so for unity equilateral triangle, side length = sqrt(4/sqrt(3)) = 1.5196713713
+  const tri_side_len = 1.5196713713;
+  // therefore the total area will be
+  // 1.72047740059 * (1.5196713713)^2 + 5(1) --- 5 triangles + 1 pentagon
+  const pent_area = pent_area_factor * tri_side_len * tri_side_len;
+  const total_area = pent_area + 5;
+  let shape_hit = total_area * rnd(seed);
+
+  // just have to scale this correctly 
+  // so area of while star is 1
+  // of this whole star is 1
+  const area_scale = 1.0 / total_area;
+  const lin_scale = sqrt(area_scale);
+
+  if(shape_hit < pent_area) {
+    // we are inside the pentagon
+    let pent_pt = sample_unity_pent(seed, skew);
+    const pent_area_scale = pent_area / total_area;
+    const lin_pent_scale = -sqrt(pent_area_scale);
+    return lin_pent_scale * pent_pt;
+  }
+  // not inside the pentagon, so pick one of the 5 triangles
+  let tri_num = floor(rnd(seed) * 5f);
+  // now we need to shift by the apothem of the pentagon + the radius of the triangle 
+  // the apothem of a pentagon is 0.688190960236 * side length
+  const apothem = tri_side_len * 0.688190960236;
+  // apothem of the triangle is its radius * tan(30) = radius *  0.577350269
+  const shift_r = ( 0.577350269 * 0.877382675302) + apothem; // triangle r + apothem
+
+  // find point in the request triangle, then translate it to have its center at the center 
+  // of this segment of the pentagon
+  // each triangle is 72 degrees offset
+  let angle = radians(72.0) * tri_num + skew;
+  let translation = shift_r * vec2f(
+    cos(angle),
+    sin(angle)
+  );
+  // default triangle points to the right, which in our hexagon is triangle 3
+  // so subtract 3 from tri_num to find the # of 60degree rotations needed
+  let tri_sample = sample_unity_tri(seed, angle);
+
+  // translate then scale for whole hexagon to have unity area (each triangle has area 1/6)
+  return (tri_sample + translation) * lin_scale;
+}
+
+
+
 fn sample_unity_tri(seed: ptr<function, u32>, skew: f32) -> vec2f {
-  const r = 0.877382675302;
+  const r = 0.877382675302; // 2 / sqrt(3 * sqrt(3))
   let q = array<vec2f, 3>(
     vec2f(r, 0),
     vec2f(-r/2, r*sqrt(3)/2),
@@ -209,18 +345,40 @@ fn sample_unity_tri(seed: ptr<function, u32>, skew: f32) -> vec2f {
   return vec2f(x_rotated, y_rotated);
 }
 
+
+
+const apt_circle: u32 = 0;
+const apt_sq: u32 = 1;
+const apt_tri: u32 = 2;
+const apt_hex: u32 = 3;
+const apt_star: u32 = 4;
+const apt_pent: u32 = 5;
+const apt_slit: u32 = 6;
+
+
 // sample a point on the aperture
 // use a uniform sample across the aperture shape
 fn sample_aperture_pt(seed: ptr<function, u32>) -> vec2f {
   // f/stop = focal length / aperture diameter
   // taking the camera constant as focal length..
-  let radius = (200*d) / uniforms_f.aperture;
+  let aperture_area = 1000.0 * d * d / (uniforms_f.aperture * uniforms_f.aperture);
+  
+  let angle = radians(uniforms_f.aperture_rotation);
 
-  // first sample on a unit-radius circle
-  let unity_circle_pt = sample_unity_circle(seed);
-  let sq_pt = sample_unity_tri(seed, radians(45));
+  var unity_sample = vec2f(0);
+  switch(uniforms_int.aperture_shape) {
+    case apt_circle {unity_sample = sample_unity_circle(seed);}
+    // radius * sqrt(pi) for correct area conversion
+    case apt_sq {unity_sample= sample_unity_rect(seed, 1.0, angle);}
+    case apt_tri {unity_sample= sample_unity_tri(seed, angle);}
+    case apt_hex {unity_sample= sample_unity_hex(seed, angle);}
+    case apt_star {unity_sample= sample_unity_star(seed, angle);}
+    case apt_pent {unity_sample= sample_unity_pent(seed, angle);}
+    case apt_slit {unity_sample= sample_unity_rect(seed, 0.3, angle);}
+    default {}
+  }
 
-  return sq_pt * radius;
+  return unity_sample * aperture_area;
 }
 
 // using a depth of field model, 
@@ -260,12 +418,26 @@ fn get_camera_ray(ipcoords: vec2f, seed: ptr<function, u32>) -> Ray {
 }
 
 fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
-  const sphere_1_c = vec3f(420.0, 90.0, 100.0);
-  const sphere_r = 90f;
 
+  const sphere_1_c = vec3f(490, 50, 80);
+  const sphere_2_c = vec3f(350, 50, 0);
+  const sphere_3_c = vec3f(400, 50, 150);
+  const sphere_4_c = vec3f(320, 50, 400);
+  const sphere_r = 50;
+
+  if(int_sphere(*ray, hit, sphere_4_c, sphere_r, shader_reflect)){
+    (*ray).tmax = (*hit).distance;
+  }
+  if(int_sphere(*ray, hit, sphere_3_c, sphere_r, shader_reflect)){
+    (*ray).tmax = (*hit).distance;
+  }
   if(int_sphere(*ray, hit, sphere_1_c, sphere_r, shader_reflect)){
     (*ray).tmax = (*hit).distance;
   }
+  if(int_sphere(*ray, hit, sphere_2_c, sphere_r, shader_reflect)){
+    (*ray).tmax = (*hit).distance;
+  }
+
   // check outer binding box
   if(int_aabb(ray)){
     if(int_trimesh(ray, hit)){
@@ -273,6 +445,97 @@ fn int_scene(ray: ptr<function, Ray>,  hit: ptr<function, HitInfo>) -> bool {
     }
   }
 
+  // textured back wall
+  // tangent, binormal, normal
+  const bg_plane = Onb(
+    vec3f(1, 0, 0),
+    vec3f(0, 1, 0),
+    vec3f(0, 0, 1),
+  );
+  let bg_plane_pt = aabb.max + vec3f(0, 0, -1e-2);
+
+  if(int_plane(*ray, hit, bg_plane_pt, bg_plane, shader_reflect)){
+    (*ray).tmax = (*hit).distance;
+  }
+
+  // textured floor
+  const floor_plane = Onb(
+    vec3f(1, 0, 0),
+    vec3f(0, 0, 1),
+    vec3f(0, 1, 0),
+  );
+  let floor_plane_pt = aabb.min + vec3f(0, 1e-5, 0);
+
+  if(int_plane(*ray, hit, floor_plane_pt, floor_plane, shader_matte)){
+    (*ray).tmax = (*hit).distance;
+  }
+
+  return (*hit).hit;
+}
+
+
+fn texture_linear(texture: texture_2d<f32>, texcoords:vec2f) -> vec3f {
+  // perform bilinear average of nearst 4 texels (those surrounding the desired point)
+  // get dimensions of texture
+  let res = textureDimensions(texture);
+  let st = texcoords - floor(texcoords);
+  let ab = st * vec2f(res);
+
+  // find 4 bounding UV coordinates
+  let x1: u32 = u32(ab.x);
+  let x2: u32 = u32(ab.x + 1);
+  let y1: u32 = u32(ab.y);
+  let y2: u32 = u32(ab.y + 1);
+  let x1_f = f32(x1);
+  let x2_f = f32(x2);
+  let y1_f = f32(y1);
+  let y2_f = f32(y2);
+  let UV11 = vec2u(x1, y1); // round a and b down
+  let UV12 = vec2u(x1, y2); // round a down, b up
+  let UV22 = vec2u(x2, y2);
+  let UV21 = vec2u(x2, y1);
+  var texcolor = vec3f(0.0);
+  let denom = f32(((x2 - x1) * (y2 - y1)));
+  texcolor += textureLoad(texture, UV11, 0).rgb * ((x2_f - ab.x)*(y2_f - ab.y)) / denom;
+  texcolor += textureLoad(texture, UV12, 0).rgb * ((x2_f - ab.x)*(ab.y - y1_f)) / denom;
+  texcolor += textureLoad(texture, UV21, 0).rgb * ((ab.x - x1_f)*(y2_f - ab.y)) / denom;
+  texcolor += textureLoad(texture, UV22, 0).rgb * ((ab.x - x1_f)*(ab.y - y1_f)) / denom;
+  return texcolor;
+}
+
+fn int_plane(ray: Ray, hit: ptr<function, HitInfo>, plane_point: vec3f, plane: Onb, shader: u32) -> bool{
+  const plane_color = vec3f(0.1, 0.7, 0.0);
+
+  let omega_dot_n = dot(ray.direction, plane.normal);
+  if(abs(omega_dot_n) > 1e-4){
+    // make sure that the ray isnt parallel to 
+    // the plane (this would lead to a divide by 0 and would never intersect)
+    let t = dot((plane_point - ray.origin), plane.normal) / omega_dot_n;
+    if(ray.tmax >= t && ray.tmin <= t){
+      // good intersection!
+      (*hit).hit = true;
+      (*hit).distance = t;
+      // r(t) = o + t w
+      let x = ray.origin + t * ray.direction;
+      (*hit).position = x;
+      (*hit).normal = plane.normal;
+      (*hit).shader = shader;
+      // compute texture coordinates
+      // use tex_scale = 0.2
+
+      // find U,V coordinates from orthonormal basis
+      let offset = x - plane_point;
+      let u = dot(offset, plane.tangent);
+      let v = dot(offset, plane.binormal);
+      (*hit).texcoords = vec2f(u, v) * tex_scale;
+
+
+       // get color from texture
+      let texture_color = texture_linear(wallTexture, (*hit).texcoords);
+      (*hit).color_amb = vec3f(0.0);
+      (*hit).color_diff = texture_color;
+    }
+  }
 
   return (*hit).hit;
 }
@@ -599,7 +862,7 @@ fn sample_trimesh_light(p: vec3f, seed: ptr<function, u32>) -> Light {
 
 
 fn check_shadow(pos: vec3f, lightdir: vec3f, lightdist: f32) -> bool{
-  var lightray =  Ray(pos, lightdir, 10e-4, lightdist-10e-4);
+  var lightray =  Ray(pos, lightdir, 1e-3, lightdist-10e-4);
   var lighthit = HitInfo(false, 0.0, vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), vec3f(0.0), 1.0, 1.0, 0, vec2f(0.0));
   return int_scene(&lightray, &lighthit);
 }
@@ -777,9 +1040,10 @@ fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> F
     }
   }
 
+  let result_clamped = max(vec3f(0.0), result);
   let curr_sum = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb
     * f32(uniforms_int.frame_num);
-  let accum_color = (result + curr_sum)/ f32(uniforms_int.frame_num + 1u);
+  let accum_color = (result_clamped + curr_sum)/ f32(uniforms_int.frame_num + 1u);
   var out: FSOut;
   out.frame = vec4f(pow(accum_color, vec3f(1.0 / uniforms_f.gamma)), 1.0);
   out.accum = vec4f(accum_color, 1.0);
