@@ -114,13 +114,13 @@ fn rnd(prev: ptr<function, u32>) -> f32 {
 // for the loaded OBJ file
 // eye point
 // these are in the order bunny, teapot, dragon
-const e = vec3f(-5, 10, 30);
+const e = vec3f(-2, 1.0, -1.5);
 // camera constant
-const d = 2f;
+const d = 1.8f;
 // up vector
 const u = vec3f(0, 1, 0);
 // look at point
-const p = vec3f(-2, 5, 0.0);
+const p = vec3f(1, 0.4, 0.0);
 // directional light direction
 const dir_light_dir = vec3f(-0.3, -0.1, -0.8);
 
@@ -194,7 +194,7 @@ fn holdout_occlusion(ray: Ray, seed: ptr<function, u32>) -> f32 {
     // dont hit plane, 100% visibility
     return f32(1f);
   }
-  if(hit.distance > 85){
+  if(hit.distance > 4){
     return f32(1f);
   }
   // sample an illumination direction
@@ -245,7 +245,7 @@ fn int_skybox(ray: Ray) -> vec2f {
 
   let D = -hit.normal;
 
-  let u = 0.5 + (atan2(D.x, -D.z) / (2*3.14159));
+  let u = 0.6 + (atan2(D.x, -D.z) / (2*3.14159));
   let v = (acos(-D.y) / (3.14159));
 
   return vec2f(u, v);

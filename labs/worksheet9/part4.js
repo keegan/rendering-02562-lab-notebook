@@ -41,7 +41,7 @@ async function main() {
   
   
   const wgsl = device.createShaderModule({
-    code: await (await fetch("./part2.wgsl")).text()
+    code: await (await fetch("./part4.wgsl")).text()
   });
   
   const pipeline = device.createRenderPipeline({
@@ -111,11 +111,11 @@ async function main() {
   };
   
    
-  var filename = "data/teapot.obj";
+  var filename = "data/bunny.obj";
 
 
   const aspect = canvas.width / canvas.height;
-  const gamma = 1.5;
+  const gamma = 1.0;
   var shader = 1;
   var uniforms_f = new Float32Array([aspect, gamma]);
   var frame_num = 0;
@@ -157,7 +157,7 @@ async function main() {
 
   console.log("Load OBJ File " + filename);
 
-  const drawingInfo = await readOBJFile(filename, 1, true); // filename, scale, ccw vertices
+  const drawingInfo = await readOBJFile(filename, 3, true); // filename, scale, ccw vertices
   console.log("Start building tree");
   const bspTreeBuffers = build_bsp_tree(drawingInfo, device, {})
   console.log("done building tree");
@@ -193,7 +193,7 @@ const lightIndicesBuffer = device.createBuffer({
 
   device.queue.writeBuffer(materialsBuffer, 0, materialsArray);
 
-  const bg_tex = await load_texture(device, "data/luxo_pxr_campus.hdr.png");
+  const bg_tex = await load_texture(device, "data/photo_studio_loft_hall_4k.RGBE.PNG");
 
   const bindGroup = device.createBindGroup({
   layout: pipeline.getBindGroupLayout(0), 
@@ -252,7 +252,7 @@ const lightIndicesBuffer = device.createBuffer({
     if(running){
       await requestAnimationFrame(animate);
     }
-    await new Promise(res => setTimeout(res, 1));
+    await new Promise(res => setTimeout(res, 10));
   }
 }
 
