@@ -398,6 +398,11 @@ const lightIndicesBuffer = device.createBuffer({
 
 
   overhead.addEventListener("click", (e) => {
+    // first chekc if were in view mode
+    const isViewMode = !document.body.classList.contains('edit-mode');
+    if(isViewMode){
+      return;
+    }
     // set fdist based on y component of click point
     const rect = overhead.getBoundingClientRect();
     let yclick = e.clientY - rect.top;

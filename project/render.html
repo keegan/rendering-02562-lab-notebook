@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KPL Project - Depth of Field and Bokeh</title>
+    <title>DOF View</title>
     <script type="text/javascript" src="scripts/vec3.js"></script>
     <script type="text/javascript" src="scripts/OBJParser_interleaved.js"></script>
     <script type="text/javascript" src="scripts/Aabb.js"></script>
@@ -11,52 +11,98 @@
     <script src="script.js"></script>
     <style>
         body {
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
+            margin: 0;
             padding: 20px;
-            background: linear-gradient(135deg, #f6f8fa 0%, #eef2f5 100%);
-            color: #2c3e50;
-            line-height: 1.5;
-            min-height: 100vh;
+            background: #f8f9fa;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #495057;
         }
 
-        .main-title {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
-            font-weight: 600;
-            font-size: 2rem;
-            background: linear-gradient(120deg, #2c3e50, #3498db);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        .view-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid #dee2e6;
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .view-toggle:hover {
+            opacity: 1;
+        }
+
+        .toggle-label {
+            font-size: 0.85rem;
+            color: #495057;
+            user-select: none;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #dee2e6;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 3px;
+            background-color: #6c757d;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(34px);
         }
 
         .controls-container {
-            display: flex;
+            display: none;
             gap: 20px;
             margin-bottom: 20px;
             background: white;
             padding: 25px;
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(52, 152, 219, 0.1);
-            backdrop-filter: blur(10px);
         }
 
         .control-group {
             flex: 1;
             min-width: 150px;
-            position: relative;
             padding: 15px;
             border-radius: 8px;
             background: rgba(246, 248, 250, 0.5);
-            transition: transform 0.2s ease;
-        }
-
-        .control-group:hover {
-            transform: translateY(-2px);
         }
 
         .control-group h4 {
@@ -70,7 +116,7 @@
             width: 100%;
             margin: 10px 0;
             -webkit-appearance: none;
-            background: linear-gradient(90deg, #3498db 0%, #2980b9 100%);
+            background: #dee2e6;
             height: 4px;
             border-radius: 2px;
         }
@@ -80,182 +126,191 @@
             width: 16px;
             height: 16px;
             background: white;
-            border: 2px solid #3498db;
+            border: 2px solid #6c757d;
             border-radius: 50%;
             cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .slider::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
-            box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
         }
 
         select {
             width: 100%;
             padding: 8px;
             background: white;
-            border: 1px solid #e1e8f0;
+            border: 1px solid #dee2e6;
             border-radius: 6px;
-            color: #2c3e50;
-            font-size: 0.9rem;
-            transition: border-color 0.2s ease;
+            color: #495057;
         }
 
-        select:hover {
-            border-color: #3498db;
+        .settings-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px 16px;
+            font-size: 0.8rem;
+            border-top: 1px solid #dee2e6;
+            backdrop-filter: blur(10px);
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            opacity: 0.7;
+            transition: opacity 0.2s;
         }
 
-        #run {
-            padding: 8px 20px;
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
-        }
-
-        #run:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+        .settings-bar:hover {
+            opacity: 1;
         }
 
         .canvas-container {
             display: flex;
             gap: 20px;
-            margin-top: 20px;
-        }
-
-        .canvas-group {
-            flex: 1;
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(52, 152, 219, 0.1);
-            transition: transform 0.2s ease;
-        }
-
-        .canvas-group:hover {
-            transform: translateY(-2px);
-        }
-
-        .canvas-group h3 {
-            margin: 0 0 15px 0;
-            color: #2c3e50;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-        }
-
-        .canvas-group h3::before {
-            content: '';
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            background: #3498db;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .canvas-group p {
-            margin: 5px 0;
-            color: #666;
-            font-size: 0.9rem;
+            justify-content: center;
+            margin-bottom: 40px;
         }
 
         canvas {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #e1e8f0;
-            border-radius: 6px;
-            transition: border-color 0.2s ease;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            background: white;
         }
 
-        canvas:hover {
-            border-color: #3498db;
+        body.edit-mode .controls-container {
+            display: flex;
+        }
+
+        body.edit-mode .settings-bar {
+            display: none;
         }
 
         .attribution {
             text-align: center;
-            margin-top: 30px;
-            padding-top: 20px;
-            color: #666;
-            font-size: 0.9rem;
-            border-top: 1px solid rgba(52, 152, 219, 0.1);
+            padding: 20px 0 60px;
+            color: #6c757d;
+            font-size: 0.85rem;
         }
 
         .attribution a {
             color: #3498db;
             text-decoration: none;
-            transition: color 0.2s ease;
-            font-weight: 500;
         }
 
         .attribution a:hover {
-            color: #2980b9;
             text-decoration: underline;
+        }
+
+        #run {
+            padding: 8px 20px;
+            background: #f8f9fa;
+            color: #495057;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #run:hover {
+            background: #e9ecef;
+        }
+
+        output {
+            font-size: 0.8rem;
+            color: #6c757d;
         }
     </style>
 </head>
 <body>
-    <h1 class="main-title">Depth of Field and Bokeh</h1>
-    
-    <div class="controls-container">
-        <div class="control-group">
-            <h4>F/Stop</h4>
-            <!-- this slider lets you select the stop, then we calculate the stop automagically -->
-             <!-- Do this in half stops from f1.0 - f32 -->
-              <!-- that's stops 0 to 10 -->
-            <input type="range" min="0" max="10" value="2" class="slider" id="fstop">
-            <!-- the 5th stop = f5.6 -->
-            <output>f2</output>
-        </div>
-        <div class="control-group">
-            <h4>Focus Distance</h4>
-            <input type="range" min="1" max="1118" value="400" class="slider" id="fdist">
-            <output>400</output>
-        </div>
-        <div class="control-group">
-            <h4>Aperture Shape</h4>
-            <select id="apertureshape" size="7">
-                <option value="0">Circle</option>
-                <option value="1">Square</option>
-                <option value="2">Triangle</option>
-                <option value="3">Hexagon</option>
-                <option value="4"selected>Star</option>
-                <option value="5">Pentagon</option>
-                <option value="6">Slit</option>
-            </select>
-        </div>
-        <div class="control-group">
-            <h4>Aperture Rotation</h4>
-            <input type="range" min="0" max="180" value="90" class="slider" id="arot">
-            <output>90</output>
-        </div>
-        <div class="control-group">
-            <input type="submit" value="Run/Stop" id="run"/>
-            <div id="framecount"></div>
-        </div>
+    <div class="view-toggle">
+        <span class="toggle-label">Edit Mode</span>
+        <label class="toggle-switch">
+            <input type="checkbox" id="viewToggle">
+            <span class="toggle-slider"></span>
+        </label>
     </div>
 
-    <div class="canvas-container">
-        <div class="canvas-group">
-            <h3>Rendered Output</h3>
-            <canvas width="512" height="512" id="wgslcanvas"></canvas>
-        </div>
-        <div class="canvas-group">
-            <h3>Overhead View (Focus Plane)</h3>
-            <p>Click on this map to set focus</p>
-            <p>Dotted focus line indicates looking through the mirror</p>
-            <canvas width="512" height="512" id="overheadcanvas"></canvas>
-        </div>
-    </div>
-    <div class="attribution">
-        Application code by Keegan Lanzillotta • Interface styling by <a href="https://claude.ai" target="_blank">Claude</a>
-    </div>
+    <div class="controls-container">
+      <div class="control-group">
+          <h4>F/Stop</h4>
+          <input type="range" min="0" max="10" value="2" class="slider" id="fstop">
+          <output id="fstop-output">f2</output>
+      </div>
+      <div class="control-group">
+          <h4>Focus Distance</h4>
+          <input type="range" min="1" max="1118" value="400" class="slider" id="fdist">
+          <output id="fdist-output">400</output>
+      </div>
+      <div class="control-group">
+          <h4>Aperture Shape</h4>
+          <select id="apertureshape" size="7">
+              <option value="0">Circle</option>
+              <option value="1">Square</option>
+              <option value="2">Triangle</option>
+              <option value="3">Hexagon</option>
+              <option value="4"selected>Star</option>
+              <option value="5">Pentagon</option>
+              <option value="6">Slit</option>
+          </select>
+          <output id="aperture-output">Star</output>
+      </div>
+      <div class="control-group">
+          <h4>Aperture Rotation</h4>
+          <input type="range" min="0" max="180" value="90" class="slider" id="arot">
+          <output id="arot-output">90</output>
+      </div>
+      <div class="control-group">
+          <input type="submit" value="Run/Stop" id="run"/>
+          <div id="framecount"></div>
+      </div>
+  </div>
+
+  <div class="canvas-container">
+      <canvas width="512" height="512" id="wgslcanvas"></canvas>
+      <canvas width="512" height="512" id="overheadcanvas"></canvas>
+  </div>
+  
+  <div class="settings-bar">
+      <span class="setting">F/Stop: <output id="fstop-output-view"></output></span>
+      <span class="setting">Focus Distance: <output id="fdist-output-view"></output></span>
+      <span class="setting">Aperture: <output id="aperture-output-view"></output></span>
+      <span class="setting">Rotation: <output id="arot-output-view"></output></span>
+  </div>
+
+  <div class="attribution">
+    Application code by Keegan Lanzillotta • Interface styling by <a href="https://claude.ai" target="_blank">Claude</a>
+  </div>
+
+  <script>
+      document.getElementById('viewToggle').addEventListener('change', function() {
+          document.body.classList.toggle('edit-mode');
+      });
+
+      // Function to sync values between edit and view modes
+      const syncOutputs = (controlId, value) => {
+          document.getElementById(`${controlId}-output`).value = value;
+          document.getElementById(`${controlId}-output-view`).value = value;
+      };
+
+      // Watch for changes and sync values
+      document.getElementById('fstop').addEventListener('input', e => syncOutputs('fstop', 'f' + e.target.value));
+      document.getElementById('fdist').addEventListener('input', e => syncOutputs('fdist', e.target.value));
+      document.getElementById('arot').addEventListener('input', e => syncOutputs('arot', e.target.value));
+      document.getElementById('apertureshape').addEventListener('change', e => {
+          const text = e.target.options[e.target.selectedIndex].text;
+          syncOutputs('aperture', text);
+      });
+
+      // Initial setup
+      const initialValues = {
+            'fstop': 'f2',
+            'fdist': '400',
+            'aperture': 'Star',
+            'arot': '90'
+        };
+
+        // Set initial values
+        Object.entries(initialValues).forEach(([id, value]) => {
+            syncOutputs(id, value);
+        });
+
+  </script>
 </body>
 </html>
