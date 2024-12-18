@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOF View</title>
+    <title>KPL Project - Depth of Field and Bokeh</title>
     <script type="text/javascript" src="scripts/vec3.js"></script>
     <script type="text/javascript" src="scripts/OBJParser_interleaved.js"></script>
     <script type="text/javascript" src="scripts/Aabb.js"></script>
@@ -13,9 +13,10 @@
         body {
             margin: 0;
             padding: 20px;
-            background: #f8f9fa;
-            font-family: system-ui, -apple-system, sans-serif;
-            color: #495057;
+            background: #f0f2f5;
+            font-family: "SF Pro Display", system-ui, -apple-system, sans-serif;
+            color: #2d3436;
+            background-image: radial-gradient(circle at 50% 50%, #fff 0%, #f0f2f5 100%);
         }
 
         .view-toggle {
@@ -26,22 +27,25 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid #dee2e6;
-            backdrop-filter: blur(4px);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 8px 16px;
+            border-radius: 24px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+            backdrop-filter: blur(8px);
             opacity: 0;
-            transition: opacity 0.3s;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .view-toggle:hover {
             opacity: 1;
+            transform: translateY(2px);
         }
 
         .toggle-label {
-            font-size: 0.85rem;
-            color: #495057;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #2d3436;
             user-select: none;
         }
 
@@ -49,7 +53,7 @@
             position: relative;
             display: inline-block;
             width: 60px;
-            height: 24px;
+            height: 26px;
         }
 
         .toggle-switch input {
@@ -65,79 +69,135 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(255, 255, 255, 0.9);
-            border: 1px solid #dee2e6;
-            transition: .4s;
-            border-radius: 24px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 26px;
         }
 
         .toggle-slider:before {
             position: absolute;
             content: "";
-            height: 16px;
-            width: 16px;
+            height: 18px;
+            width: 18px;
             left: 4px;
             bottom: 3px;
-            background-color: #6c757d;
-            transition: .4s;
+            background-color: #0984e3;
+            transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         input:checked + .toggle-slider:before {
-            transform: translateX(34px);
+            transform: translateX(33px);
         }
 
         .controls-container {
             display: none;
-            gap: 20px;
-            margin-bottom: 20px;
+            gap: 24px;
+            margin-bottom: 24px;
             background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
         }
 
         .control-group {
             flex: 1;
             min-width: 150px;
-            padding: 15px;
-            border-radius: 8px;
-            background: rgba(246, 248, 250, 0.5);
+            padding: 18px;
+            border-radius: 12px;
+            background: rgba(246, 248, 250, 0.7);
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            transition: transform 0.2s ease;
+        }
+
+        .control-group:hover {
+            transform: translateY(-2px);
         }
 
         .control-group h4 {
-            margin: 0 0 12px 0;
-            color: #2c3e50;
-            font-weight: 500;
+            margin: 0 0 14px 0;
+            color: #2d3436;
+            font-weight: 600;
             font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        .control-group:last-child {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        #run {
+            padding: 10px 24px;
+            background: #0984e3;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 200px;
+        }
+
+        #run:hover {
+            background: #074e83;
+            transform: translateY(-2px);
+        }
+
+        #framecount {
+            text-align: center;
         }
 
         .slider {
             width: 100%;
-            margin: 10px 0;
+            margin: 12px 0;
             -webkit-appearance: none;
-            background: #dee2e6;
+            background: #dfe6e9;
             height: 4px;
             border-radius: 2px;
+            transition: background 0.2s;
+        }
+
+        .slider:hover {
+            background: #0984e3;
         }
 
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             background: white;
-            border: 2px solid #6c757d;
+            border: 2px solid #0984e3;
             border-radius: 50%;
             cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s;
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
         }
 
         select {
             width: 100%;
-            padding: 8px;
+            padding: 10px;
             background: white;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            color: #495057;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
+            color: #2d3436;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        select:hover {
+            border-color: #0984e3;
         }
 
         .settings-bar {
@@ -145,33 +205,91 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 8px 16px;
-            font-size: 0.8rem;
-            border-top: 1px solid #dee2e6;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            font-size: 0.9rem;
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
             backdrop-filter: blur(10px);
             display: flex;
-            gap: 20px;
+            gap: 24px;
             justify-content: center;
             opacity: 0.7;
-            transition: opacity 0.2s;
+            transition: all 0.3s;
         }
 
         .settings-bar:hover {
             opacity: 1;
+            transform: translateY(-2px);
         }
+
+
 
         .canvas-container {
             display: flex;
             gap: 20px;
-            justify-content: center;
-            margin-bottom: 40px;
+            margin-top: 20px;
+        }
+
+        .canvas-group {
+            flex: 1;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(52, 152, 219, 0.1);
+            transition: transform 0.2s ease;
+        }
+
+        .canvas-group:hover {
+            transform: translateY(-2px);
+        }
+
+        .canvas-group h3 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .canvas-group h3::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #3498db;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .canvas-group p {
+            margin: 5px 0;
+            color: #666;
+            font-size: 0.9rem;
         }
 
         canvas {
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #e1e8f0;
+            border-radius: 6px;
+            transition: border-color 0.2s ease;
+        }
+
+        canvas:hover {
+            border-color: #3498db;
+        }
+
+        canvas {
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
             background: white;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            transition: transform 0.3s ease;
+        }
+
+        canvas:hover {
+            transform: translateY(-4px) rotateX(2deg);
         }
 
         body.edit-mode .controls-container {
@@ -185,40 +303,48 @@
         .attribution {
             text-align: center;
             padding: 20px 0 60px;
-            color: #6c757d;
-            font-size: 0.85rem;
+            color: #636e72;
+            font-size: 0.9rem;
+            letter-spacing: -0.01em;
         }
 
         .attribution a {
-            color: #3498db;
+            color: #0984e3;
             text-decoration: none;
-        }
-
-        .attribution a:hover {
-            text-decoration: underline;
-        }
-
-        #run {
-            padding: 8px 20px;
-            background: #f8f9fa;
-            color: #495057;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            cursor: pointer;
             transition: all 0.2s;
         }
 
+        .attribution a:hover {
+            color: #074e83;
+            text-decoration: none;
+        }
+
+        #run {
+            padding: 10px 24px;
+            background: #0984e3;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
         #run:hover {
-            background: #e9ecef;
+            background: #074e83;
+            transform: translateY(-2px);
         }
 
         output {
-            font-size: 0.8rem;
-            color: #6c757d;
+            font-size: 0.9rem;
+            color: #636e72;
+            font-weight: 500;
         }
     </style>
 </head>
 <body>
+    <!-- Rest of the HTML remains unchanged -->
     <div class="view-toggle">
         <span class="toggle-label">Edit Mode</span>
         <label class="toggle-switch">
@@ -263,8 +389,16 @@
   </div>
 
   <div class="canvas-container">
+    <div class="canvas-group">
+      <h3>Rendered Output</h3>
       <canvas width="512" height="512" id="wgslcanvas"></canvas>
+    </div>
+    <div class="canvas-group">
+      <h3>Overhead View (Focus Plane)</h3>
+      <p>Click on this map to set focus</p>
+      <p>Dotted focus line indicates looking through the mirror</p>
       <canvas width="512" height="512" id="overheadcanvas"></canvas>
+    </div>
   </div>
   
   <div class="settings-bar">
@@ -283,13 +417,11 @@
           document.body.classList.toggle('edit-mode');
       });
 
-      // Function to sync values between edit and view modes
       const syncOutputs = (controlId, value) => {
           document.getElementById(`${controlId}-output`).value = value;
           document.getElementById(`${controlId}-output-view`).value = value;
       };
 
-      // Watch for changes and sync values
       document.getElementById('fstop').addEventListener('input', e => syncOutputs('fstop', 'f' + e.target.value));
       document.getElementById('fdist').addEventListener('input', e => syncOutputs('fdist', e.target.value));
       document.getElementById('arot').addEventListener('input', e => syncOutputs('arot', e.target.value));
@@ -298,7 +430,6 @@
           syncOutputs('aperture', text);
       });
 
-      // Initial setup
       const initialValues = {
             'fstop': 'f2',
             'fdist': '400',
@@ -306,11 +437,9 @@
             'arot': '90'
         };
 
-        // Set initial values
         Object.entries(initialValues).forEach(([id, value]) => {
             syncOutputs(id, value);
         });
-
   </script>
 </body>
 </html>
