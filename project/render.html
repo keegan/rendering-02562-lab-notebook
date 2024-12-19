@@ -93,6 +93,7 @@
         }
 
         .controls-container {
+            height: auto;
             display: none;
             gap: 24px;
             margin-bottom: 24px;
@@ -109,11 +110,25 @@
             border-radius: 12px;
             background: rgba(246, 248, 250, 0.7);
             border: 1px solid rgba(0, 0, 0, 0.03);
-            transition: transform 0.2s ease;
+            transition: none;
+            height: auto;
+
         }
 
-        .control-group:hover {
-            transform: translateY(-2px);
+        .hover-trigger {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .hover-trigger:hover ~ .controls-container,
+        .controls-container:hover {
+            height: auto;
+            min-height: 300px;
         }
 
         .control-group h4 {
@@ -206,14 +221,12 @@
             left: 0;
             right: 0;
             background: rgba(255, 255, 255, 0.95);
-            padding: 12px 20px;
             font-size: 0.9rem;
             border-top: 1px solid rgba(0, 0, 0, 0.05);
             backdrop-filter: blur(10px);
             display: flex;
             gap: 24px;
             justify-content: center;
-            opacity: 0.7;
             transition: all 0.3s;
         }
 
@@ -268,19 +281,19 @@
             font-size: 0.9rem;
         }
 
-        canvas {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #e1e8f0;
-            border-radius: 6px;
-            transition: border-color 0.2s ease;
-        }
 
         canvas:hover {
             border-color: #3498db;
         }
 
         canvas {
+            display: block;
+            padding-left: 0;
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            width: 100%;
+            max-width: 512px;
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 8px;
             background: white;
@@ -341,10 +354,25 @@
             color: #636e72;
             font-weight: 500;
         }
+        .title-bar {
+            text-align: center;
+            padding: 20px 0;
+            margin-bottom: 20px;
+        }
+
+        .title-bar h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #2d3436;
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
     </style>
 </head>
 <body>
-    <!-- Rest of the HTML remains unchanged -->
+  <div class="title-bar">
+    <h1>Depth of Field and Bokeh Simulator</h1>
+  </div>
     <div class="view-toggle">
         <span class="toggle-label">Edit Mode</span>
         <label class="toggle-switch">
@@ -352,12 +380,20 @@
             <span class="toggle-slider"></span>
         </label>
     </div>
-
+    <div class="hover-trigger"></div>
     <div class="controls-container">
       <div class="control-group">
-          <h4>F/Stop</h4>
+          <h4>f-Stop</h4>
           <input type="range" min="0" max="10" value="2" class="slider" id="fstop">
-          <output id="fstop-output">f2</output>
+          <output id="fstop-output">f/2</output>
+          <p style="font-size:9pt">
+            Aperture sizes are measured in f-numbers, which are essentially the denominator of a fractional diameter.
+            In photography settings are measured with "stops", where any adjustment by one stop means letting in half as much 
+            light or twice as much light.
+            Adjusting the aperture by a "full stop" means changing its area by a factor of 2. 
+            In terms of the diameter, this means chaning by a factor of sqrt(2) = 1.4, so the f-numbers grow as powers of 
+            1.4. Larger numbers mean smaller apertures.
+          </p>
       </div>
       <div class="control-group">
           <h4>Focus Distance</h4>
@@ -402,10 +438,11 @@
   </div>
   
   <div class="settings-bar">
-      <span class="setting">F/Stop: <output id="fstop-output-view"></output></span>
+      <span class="setting">f-Stop: <output id="fstop-output-view"></output></span>
       <span class="setting">Focus Distance: <output id="fdist-output-view"></output></span>
       <span class="setting">Aperture: <output id="aperture-output-view"></output></span>
       <span class="setting">Rotation: <output id="arot-output-view"></output></span>
+      <span class="setting">Samples: <output id="samples-output-view"></output></span>
   </div>
 
   <div class="attribution">
@@ -418,8 +455,8 @@
       });
 
       const syncOutputs = (controlId, value) => {
-          document.getElementById(`${controlId}-output`).value = value;
-          document.getElementById(`${controlId}-output-view`).value = value;
+        document.getElementById(`${controlId}-output-view`).value = value;
+        document.getElementById(`${controlId}-output`).value = value;
       };
 
       document.getElementById('fstop').addEventListener('input', e => syncOutputs('fstop', 'f' + e.target.value));
@@ -431,10 +468,11 @@
       });
 
       const initialValues = {
-            'fstop': 'f2',
+            'fstop': 'f/2',
             'fdist': '400',
             'aperture': 'Star',
-            'arot': '90'
+            'arot': '90',
+            'samples': '0',
         };
 
         Object.entries(initialValues).forEach(([id, value]) => {

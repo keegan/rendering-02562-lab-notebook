@@ -361,14 +361,15 @@ const lightIndicesBuffer = device.createBuffer({
   };
 
   let fstop_slider = document.getElementById("fstop");
-  fstop_slider.addEventListener("change", (e) => {
+  fstop_slider.addEventListener("click", (e) => {
     fstop = fstop2apt(e.target.value);
     uniforms_f[2] = fstop;
     device.queue.writeBuffer(uniformBuffer_f, 0, uniforms_f);
     // reset image
     frame_num = 0;
     draw_overhead_map(ov_ctx, fdist, fstop);
-    fstop_slider.nextElementSibling.value = `f${Math.round(fstop * 10) / 10.0}`;
+    fstop_slider.nextElementSibling.value = `f/${Math.round(fstop * 10) / 10.0}`;
+    document.getElementById("fstop-output-view").value = `f/${Math.round(fstop * 10) / 10.0}`;
 
   });
 
@@ -467,6 +468,8 @@ const lightIndicesBuffer = device.createBuffer({
   // every millisecond, request a new frame
   setInterval(() => {
     frameCounter.innerText = "Frame: " + frame_num;
+    document.getElementById(`samples-output-view`).value = frame_num;
+
     if(running){
       requestAnimationFrame(animate);
     }

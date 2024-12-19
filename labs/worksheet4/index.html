@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>KPL Worksheet 4</title>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+  <h1>KPL Worksheet 4</h1>
+  <div>
+    <h2>Part 1</h2>
+    <p>With an efficiency of 20%, the bulb will emit 5W of light. The energy of a single 500nm photon is:</p>
+    <p>
+      \[E = \frac{h \cdot c}{\lambda} = \frac{6.626 \cdot 10^{-34}\text{Js} \cdot 300\text{Mm/s}}{500\text{nm}}=3.97 \cdot 10^{-19} \text{J/photon}\]
+    </p>
+    <p>Therefore to output 5W=5J/s, we must emit \[ {5\text{J/s} \over 3.97 \cdot 10^{-19} \text{J/photon}} = 1.26 \cdot 10^{19} \text{photons/s} \]</p>
+    <div class="solution">
+      \[1.26 \cdot 10^{19} \text{photons/s} \]
+    </div>
+  </div>
+  <div>
+    <h2>Part 2</h2>
+    <p>The bulb's power is \[ (2.4\text{V})\cdot(0.7\text{A})=1.68\text{W}\]</p>
+    <p>Because the bulb is ideal, it emits all that power as radiant flux over its surface.</p>
+    <p>Because the bulb emits evenly over a sphere-shape, it emits evenly through a \(4\pi \text{sr}\) solid angle. This gives a radiant intensity
+      of \[I = \frac{1.68\text{W}}{4\pi\text{sr}} = 0.133\text{W/sr}\]
+    </p>
+    <p>The radiant intensity is equal to \[M = \frac{I}{R^2}=\frac{0.133\text{W/sr}}{(5\text{mm})^2} = 5350\text{W/m}^2\]</p>
+    <p>In 5 minutes, the bulb will emit \[ 1.68\text{W} \cdot 5\text{minutes}\cdot60\text{s/minute}=504\text{J}\]</p>
+    <div class="solution">
+      <ul>
+        <li>\[\text{Radiant Flux: }1.68\text{W}\]</li>
+        <li>\[\text{Radiant Intensity: }0.133\text{W/sr}\]</li>
+        <li>\[\text{Radiant Exitance: }5350\text{W/m}^2\]</li>
+        <li>\[\text{Emitted energy in 5 minutes: }504\text{J}\]</li>
+      </ul>
+    </div>
+  </div>
+  <div>
+    <h2>Part 3</h2>
+    <p>
+      The irradiance is (assuming eye facing toward light bulb):
+      \[ E = \frac{\Phi}{4\pi} \cdot \frac{\cos{\theta}}{r^2} = \frac{1.68\text{W}}{4\pi\cdot(1\text{m})^2}=0.133\text{W/m}^2\]
+    </p>
+    <div class="solution">
+     \[ 0.133\text{W/m}^2 \]
+    </div>
+  </div>
+  <div>
+    <h2>Part 4</h2>
+    <p>At the tale, the irradiance is 
+      \[ \frac{(20\%) \cdot (200\text{W})}{4\pi (2\text{m})^2} = 0.796\text{W/m}^2\]
+    </p>
+    <p>This is equivalent to an illuminance of \(685 \cdot 0.1 \cdot 0.796\text{W/m}^2 = 54.5\text{lux}\)</p>
+    <div class="solution">
+      <ul>
+        <li>Irradiance at table: \( 0.796\text{W/m}^2\)</li>
+        <li>Illuminance at table: \( 54.5\text{lux} \)</li>
+      </ul>
+    </div>
+  </div>
+  <div>
+    <h2>Part 5</h2>
+    <p>
+      If both sides are equally illuminated, then the flux received 
+      on the screen is equal from both sources. That is 
+      \[
+        \frac{I_s}{r_s^2} = \frac{I_x}{r_x^2}
+      \]
+    </p>
+    <p>By simple algebra: 
+      \[ I_x = \frac{r_x^2}{r_s^2} I_s = \frac{(65\text{cm})^2}{(35\text{cm})^2} \cdot 40\text{cd} = 138\text{cd} \]
+    </p>
+    <div class="solution">
+      <p>
+        \[ I_x = 138\text{cd}  \]
+      </p>
+    </div>
+  </div>
+  <div>
+    <h2>Part 6</h2>
+    <p>
+      Because the light source is diffuse, it emits in a cosine-weighted hemisphere. The integral 
+      across this cosine-weighted hemisphere is a solid angle of \(\pi\). 
+      Therefore, the radiosity is \[ \pi \text{ sr} \cdot 5000\text{W/sr m}^2 = 15700 \text{W/m}^2 \]
+    </p>
+    <p>
+      In a second, this emits the energy of
+      \[ (1\text{s}) \cdot (10\text{cm})^2 \cdot ( 15700 \text{W/m}^2) = 157\text{J} \]
+    </p>
+
+    <div class="solution">
+      \[ \text{Radiosity: } 15700 \text{W/m}^2 \]
+      \[ \text{Emitted energy (per second): } 157\text{J/s} \]
+    </div>
+  </div>
+  <div>
+    <h2>Part 7</h2>
+    <p>
+      The radiant exitance 
+      \[ \int_{2\pi} 6000 \text{W/s m}^2 \cdot \cos{\theta} \cdot d\omega = 6000\pi \text{W/m}^2 = 18.8 \text{kW/m}^2\]
+    </p>
+    <p>
+      This emits a power of \[ (0.1\text{m})^2 \cdot (18.8 \text{kW/m}^2) = 188\text{W} \]
+    </p>
+    <div class="solution">
+      \[ \text{Radiant Exitance: }18.8 \text{kW/m}^2\]
+      \[ \text{Emitted power: } 188 \text{W}\]
+    </div>
+  </div>
+  <div>
+    <h2>Part 8</h2>
+    <div class="solution">
+      <p>Radiance describes the light source and is the same regardless of observer so yes, the radiance from the sun 
+        is the same on Mars as on Earth, assuming they have the same angle to the sun. However, Earth may receive 
+        a higher flux than Mars leading to more energy on the surface of the Earth. In actuality, because Mars is closer to the sun than Earth, 
+        the increases flux at the surface of the Earth is due to light from the sun and radiated infrared photosn from the earth that reflect
+        back to the surface due to greenhouse gasses in the Earth's atmosphere, which is much thicker than Mars'.
+      </p>
+    </div>
+  </div>
+  <style>
+    .solution {
+      border: 1px blue solid;
+    }
+    body {
+            margin: 0;
+            padding: 20px;
+            background: #f0f2f5;
+            font-family: "SF Pro Display", system-ui, -apple-system, sans-serif;
+            color: #2d3436;
+            background-image: radial-gradient(circle at 50% 50%, #fff 0%, #f0f2f5 100%);
+        }
+  </style>
+</body>
+</html>
