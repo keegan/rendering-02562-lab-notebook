@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>KPL Worksheet 3</title>
+</head>
+<body>
+  <h1>Worksheet 3 Part 4</h1>
+  <h3>Keegan Lanzillotta</h3>
+  <p>Note that these screenshots were taken before fixing a bug in the refraction shader. Therefore the images 
+    here are showing incorrect refraction behavior. However, this has no impact on the discussion of texture filtering and anti-aliasing.
+  </p>
+  <div>
+    <p>
+      Overall, as the number of subpixel samples increases, sharp edges become less jagged. For example, the sharp shadow around the ball has visibly jagged edges with subpixels = 1, but with subsample antialiasing these edges smooth out. The difference is especially noticable when zoomed  in closely to the edge (by adjusting the camera constant).
+    </p>
+    <p>
+      For example:
+    </p>
+    <div class="figcontainer">
+      <figure>
+      <img src="imgs/p1.png" width="300px"/>
+      <figcaption>subdivisions = 1</figcaption>
+    </figure>
+    <figure>
+      <img src="imgs/p5.png" width="300px">
+      <figcaption>subdivisions = 5</figcaption>
+    </figure>
+    <figure>
+      <img src="imgs/p20.png" width="300px">
+      <figcaption>subdivisions = 20</figcaption>
+    </figure>
+    </div>
+    <div>
+      <h2>Scaling Factor 0.2</h2>
+      <div>
+        <h3>Zoomed in</h3>
+        <div>
+          <h4>Nearest Neighbor</h4>
+          <p>
+            With nearest neighbor filtering, the texture appears "sharper" but individual pixels in the original texture are more evident. This is especially highlighted when individual texels take up many pixels in the final render. For example, when looking at the top of the sphere in refractive shader mode, the ground directly below the ball is magnified by the sphere acting as a lens. This allows the texels to be made out clearly even with the scaling factor of 0.2.
+          </p>
+          <figure>
+            <img src="imgs/nn.png" width="400px"/>
+            <figcaption>nearest neighbor texture filtering</figcaption>
+          </figure>
+        </div>
+        <div>
+          <h4>Bilinear</h4>
+          <p>
+            When rendering with bilinear texture filtering instead, the edges of individual texels are less clear, and the overall image is smoother. There is no additional information, as the texture is so enlarged that individual texels still cover many pixels in the render, but the bilinear filtering makes the transition between adjacent texels less apparent by blurring between them.        </p>
+          <figure>
+            <img src="imgs/lin.png" width="400px"/>
+            <figcaption>bilinear texture filtering</figcaption>
+          </figure>
+        </div>
+      </div>
+      <div>
+        <h3>Zoomed Out</h3>
+        <div>
+          <p>
+            When zoomed out, the higher sharpness of nearest neighbor filtering makes the grass appear slightly more textured, but the difference is slight.         </p>
+          <h4>Nearest Neighbor</h4>
+          
+          <figure>
+            <img src="imgs/nnfar.png" width="400px"/>
+            <figcaption>nearest neighbor texture filtering from afar</figcaption>
+          </figure>
+        </div>
+        <div>
+          <h4>Bilinear</h4>
+          <p>
+          <figure>
+            <img src="imgs/linfar.png" width="400px"/>
+            <figcaption>bilinear texture filtering from afar</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h2>Scaling factor 0.02</h2>
+      <p>With the scale factor reduced by a factor of 10, individual texels of the grass texture now take up large portions of the render. With bilinear filtering this results in a very blurry image, and wiht nearest neighbor filtering it results in large obvious square texels.</p>
+      <div class="figcontainer">
+        <figure>
+          <img src="imgs/smallnn.png" width="300px"/>
+          <figcaption>nearest neighor filtering w/ scale factor 0.02</figcaption>
+        </figure>
+        <figure>
+          <img src="imgs/smalllin.png" width="300px"/>
+          <figcaption>bilinear filtering w/ scale factor 0.02</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+  <style>
+    div {
+      padding: 5px;
+      border: 5px gray solid;
+      border-radius: 10px;
+    }
+    .figcontainer {
+      display: inline-flex;
+    }
+    .solution {
+      border: 1px blue solid;
+    }
+    body {
+            margin: 0;
+            padding: 20px;
+            background: #f0f2f5;
+            font-family: "SF Pro Display", system-ui, -apple-system, sans-serif;
+            color: #2d3436;
+            background-image: radial-gradient(circle at 50% 50%, #fff 0%, #f0f2f5 100%);
+        }
+  </style>
+</body>
+</html>
