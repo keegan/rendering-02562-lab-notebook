@@ -709,6 +709,9 @@ fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> F
   var r = get_camera_ray(ipcoords + jitter); 
   for(var i = 0; i < max_depth; i ++){
     if(int_scene(&r, &hit)){
+      if(hit.emit){
+        result += hit.factor * hit.color_amb;
+      }
       result += shade(&r, &hit, &t);
       
       if(hit.hit){

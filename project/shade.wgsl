@@ -156,7 +156,7 @@ fn sample_unity_circle(seed: ptr<function, u32>) -> vec2f {
   // first sample on a unit-radius circle
   let theta = rnd(seed) * radians(360f); // radians(360) = 2pi
   let r = sqrt(rnd(seed)) * 0.564189583548; // sqrt(rnd) gives equal distribution across area of circle
-  // r is divided by sqrt(pi) ... pi^(-1) = 0.564189583548, 
+  // r is divided by sqrt(pi) ... pi^(-1/2) = 0.564189583548, 
   // so that the area is 1
 
   let x = r * cos(theta);
